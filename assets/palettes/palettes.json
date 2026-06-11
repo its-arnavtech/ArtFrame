@@ -1,0 +1,15 @@
+{
+  "risograph": {
+    "paper": "#ece7da",
+    "red": "#cd2e2a",
+    "blue": "#1655a4"
+  },
+  "cyanotype": {
+    "deep_blue": "#083d77",
+    "paper_white": "#f4f7f8"
+  },
+  "stippling": {
+    "ink": "#232323",
+    "paper": "#f2f2ee"
+  }
+}
