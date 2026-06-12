@@ -31,11 +31,28 @@ def _draw_hand_points(output: np.ndarray, hand: HandFingerPoints, color: tuple[i
         cv2.circle(output, center, 4, color, -1, cv2.LINE_AA)
 
 
+def _draw_finger_rails(output: np.ndarray, controls: FingerControlPair) -> None:
+    colors = [
+        (70, 230, 255),
+        (80, 190, 255),
+        (110, 245, 150),
+        (245, 210, 80),
+        (255, 130, 120),
+    ]
+
+    for left, right, color in zip(controls.left.tips(), controls.right.tips(), colors):
+        start = (int(round(left.x)), int(round(left.y)))
+        end = (int(round(right.x)), int(round(right.y)))
+        cv2.line(output, start, end, (0, 0, 0), 5, cv2.LINE_AA)
+        cv2.line(output, start, end, color, 2, cv2.LINE_AA)
+
+
 def draw_finger_points(frame_bgr: np.ndarray, controls: FingerControlPair | None) -> np.ndarray:
     if controls is None:
         return frame_bgr
 
     output = frame_bgr.copy()
+    _draw_finger_rails(output, controls)
     _draw_hand_points(output, controls.left, (64, 220, 255))
     _draw_hand_points(output, controls.right, (255, 150, 64))
     return output

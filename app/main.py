@@ -5,7 +5,7 @@ import cv2
 from app.camera.webcam import Webcam
 from app.compositing.overlay import composite_overlay
 from app.config import AppConfig
-from app.geometry.strip import build_finger_strip_quad
+from app.geometry.strip import build_finger_section_quads
 from app.geometry.warp import warp_canvas_to_quad
 from app.styles.registry import StyleRegistry
 from app.tracking.fingers import extract_finger_control_pair
@@ -27,7 +27,7 @@ def main() -> None:
         height=config.frame_height,
         mirror=config.mirror_camera,
     )
-    tracker = HandTracker()
+    tracker = HandTracker(processing_size=(config.tracking_width, config.tracking_height))
     smoother = FingerControlPairSmoother(config.smoothing_alpha)
     registry = StyleRegistry()
     controls = Controls(registry)
@@ -46,15 +46,23 @@ def main() -> None:
             output = frame.copy()
 
             if smoothed_controls is not None:
-                quad = build_finger_strip_quad(
-                    smoothed_controls,
-                    height_ratio=config.strip_height_ratio,
-                    min_height=config.min_strip_height,
-                    max_height=config.max_strip_height,
-                )
-                canvas = registry.current().render(frame, (config.canvas_width, config.canvas_height))
-                rendered = warp_canvas_to_quad(canvas, quad, frame.shape[1], frame.shape[0])
-                output = composite_overlay(output, rendered.image, rendered.mask)
+                quads = build_finger_section_quads(smoothed_controls)
+                styles = registry.sequence(len(quads))
+                canvases = {
+                    style.name: style.render(frame, (config.canvas_width, config.canvas_height))
+                    for style in {style.name: style for style in styles}.values()
+                }
+
+                for quad, style in zip(quads, styles):
+                    canvas = canvases[style.name]
+                    rendered = warp_canvas_to_quad(canvas, quad, frame.shape[1], frame.shape[0])
+                    output = composite_overlay(
+                        output,
+                        rendered.image,
+                        rendered.mask,
+                        rendered.origin,
+                        copy_frame=False,
+                    )
 
             fps = fps_counter.tick()
             if config.debug_hud:

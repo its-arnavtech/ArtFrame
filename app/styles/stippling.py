@@ -14,13 +14,28 @@ class StipplingStyle(StripStyle):
         width, height = canvas_size
         crop = cv2.resize(frame_bgr, (width, height))
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        stippled = np.full((height, width, 3), 242, dtype=np.uint8)
-        step = max(4, min(width, height) // 45)
-
-        for y in range(step // 2, height, step):
-            for x in range(step // 2, width, step):
-                intensity = int(gray[y, x])
-                radius = max(1, int((255 - intensity) / 255 * step * 0.45))
-                cv2.circle(stippled, (x, y), radius, (35, 35, 35), -1, cv2.LINE_AA)
+        dot_size = 3
+        small_width = max(1, width // dot_size)
+        small_height = max(1, height // dot_size)
+        small = cv2.resize(gray, (small_width, small_height), interpolation=cv2.INTER_AREA)
+        bayer = np.array(
+            [
+                [0, 128, 32, 160],
+                [192, 64, 224, 96],
+                [48, 176, 16, 144],
+                [240, 112, 208, 80],
+            ],
+            dtype=np.uint8,
+        )
+        threshold = np.tile(
+            bayer,
+            (
+                (small_height + bayer.shape[0] - 1) // bayer.shape[0],
+                (small_width + bayer.shape[1] - 1) // bayer.shape[1],
+            ),
+        )[:small_height, :small_width]
+        ink = np.where(small < threshold, 35, 242).astype(np.uint8)
+        stippled_gray = cv2.resize(ink, (width, height), interpolation=cv2.INTER_NEAREST)
+        stippled = cv2.cvtColor(stippled_gray, cv2.COLOR_GRAY2BGR)
 
         return compose_strip_template(stippled, canvas_size, title="DOT")

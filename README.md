@@ -2,7 +2,7 @@
 
 `ArtFrame` is a modular Python scaffold for a real-time webcam AR effect. The intended final experience is a virtual graphic strip that appears between both hands and follows their movement, with artistic rendering styles such as risograph, cyanotype, and stippling.
 
-This first phase focuses on clean architecture, interfaces, placeholder implementations, and basic tests. The current runtime also tracks individual fingertip points so the strip can expand, skew, and taper from finger geometry. The advanced visual effects and production-grade hand foreground compositing are intentionally left for later phases.
+This first phase focuses on clean architecture, interfaces, placeholder implementations, and basic tests. The current runtime also tracks individual fingertip points, connects matching fingers as rails, and renders style bands in the spaces between those rails. The advanced visual effects and production-grade hand foreground compositing are intentionally left for later phases.
 
 ## Setup
 
@@ -18,7 +18,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-The app opens the default webcam and displays the live frame. If both hands are detected, a placeholder style canvas is warped onto a strip controlled by the left and right fingertip spreads. Debug dots show the tracked thumb, index, middle, ring, and pinky tips for each hand.
+The app opens the default webcam and displays the live frame. If both hands are detected, matching fingertips are connected as lines: thumb-to-thumb, index-to-index, middle-to-middle, ring-to-ring, and pinky-to-pinky. The sections between those lines are filled with cycling style renderers such as risograph, cyanotype, and stippling. Debug dots show the tracked thumb, index, middle, ring, and pinky tips for each hand.
 
 ## Controls
 
@@ -32,7 +32,7 @@ The app opens the default webcam and displays the live frame. If both hands are 
 
 - `app/camera`: webcam capture
 - `app/tracking`: MediaPipe hand detection, fingertip extraction, anchor extraction, and smoothing
-- `app/geometry`: finger-driven strip quad construction and perspective warping
+- `app/geometry`: finger-driven section construction and perspective warping
 - `app/styles`: style interface, placeholder renderers, and style registry
 - `app/compositing`: overlay compositing
 - `app/ui`: keyboard controls and HUD drawing

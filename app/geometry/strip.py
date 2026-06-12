@@ -49,6 +49,36 @@ def _point_from_array(point: np.ndarray) -> Point2D:
     return Point2D(float(point[0]), float(point[1]))
 
 
+def _quad_from_points(
+    top_left: Point2D,
+    top_right: Point2D,
+    bottom_right: Point2D,
+    bottom_left: Point2D,
+) -> StripQuad:
+    top_left_array = top_left.as_array()
+    top_right_array = top_right.as_array()
+    bottom_right_array = bottom_right.as_array()
+    bottom_left_array = bottom_left.as_array()
+    center = (top_left_array + top_right_array + bottom_right_array + bottom_left_array) / 4.0
+    top_width = float(np.linalg.norm(top_right_array - top_left_array))
+    bottom_width = float(np.linalg.norm(bottom_right_array - bottom_left_array))
+    left_height = float(np.linalg.norm(bottom_left_array - top_left_array))
+    right_height = float(np.linalg.norm(bottom_right_array - top_right_array))
+    direction = top_right_array - top_left_array
+    angle = math.degrees(math.atan2(float(direction[1]), float(direction[0])))
+
+    return StripQuad(
+        top_left=top_left,
+        top_right=top_right,
+        bottom_right=bottom_right,
+        bottom_left=bottom_left,
+        center=_point_from_array(center),
+        width=(top_width + bottom_width) / 2.0,
+        height=(left_height + right_height) / 2.0,
+        angle=angle,
+    )
+
+
 def _finger_edge_points(
     hand: HandFingerPoints,
     anchor: Point2D,
@@ -130,3 +160,21 @@ def build_finger_strip_quad(
         height=(left_height + right_height) / 2.0,
         angle=fallback.angle,
     )
+
+
+def build_finger_section_quads(controls: FingerControlPair) -> list[StripQuad]:
+    left_tips = controls.left.tips()
+    right_tips = controls.right.tips()
+    sections: list[StripQuad] = []
+
+    for index in range(len(left_tips) - 1):
+        sections.append(
+            _quad_from_points(
+                top_left=left_tips[index],
+                top_right=right_tips[index],
+                bottom_right=right_tips[index + 1],
+                bottom_left=left_tips[index + 1],
+            )
+        )
+
+    return sections

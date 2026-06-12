@@ -82,3 +82,4 @@ class StripQuad:
 class RenderResult:
     image: np.ndarray
     mask: np.ndarray
+    origin: tuple[int, int] = (0, 0)

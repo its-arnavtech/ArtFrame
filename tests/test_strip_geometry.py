@@ -1,4 +1,4 @@
-from app.geometry.strip import build_finger_strip_quad, build_strip_quad
+from app.geometry.strip import build_finger_section_quads, build_finger_strip_quad, build_strip_quad
 from app.types import AnchorPair, FingerControlPair, HandFingerPoints, Point2D
 
 
@@ -43,3 +43,36 @@ def test_finger_strip_quad_uses_fingertip_spread_for_each_edge():
     assert quad.top_right == Point2D(300, 70)
     assert quad.bottom_right == Point2D(300, 130)
     assert quad.height == 90
+
+
+def test_finger_sections_connect_matching_fingertips():
+    controls = FingerControlPair(
+        left=HandFingerPoints(
+            label="Left",
+            thumb=Point2D(10, 10),
+            index=Point2D(20, 20),
+            middle=Point2D(30, 30),
+            ring=Point2D(40, 40),
+            pinky=Point2D(50, 50),
+        ),
+        right=HandFingerPoints(
+            label="Right",
+            thumb=Point2D(110, 15),
+            index=Point2D(120, 25),
+            middle=Point2D(130, 35),
+            ring=Point2D(140, 45),
+            pinky=Point2D(150, 55),
+        ),
+    )
+
+    sections = build_finger_section_quads(controls)
+
+    assert len(sections) == 4
+    assert sections[0].top_left == controls.left.thumb
+    assert sections[0].top_right == controls.right.thumb
+    assert sections[0].bottom_right == controls.right.index
+    assert sections[0].bottom_left == controls.left.index
+    assert sections[-1].top_left == controls.left.ring
+    assert sections[-1].top_right == controls.right.ring
+    assert sections[-1].bottom_right == controls.right.pinky
+    assert sections[-1].bottom_left == controls.left.pinky

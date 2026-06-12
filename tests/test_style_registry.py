@@ -13,6 +13,26 @@ def test_style_registry_switches_styles_correctly():
     assert registry.next().name == "risograph"
 
 
+def test_style_registry_returns_cyclic_style_sequence_from_current_style():
+    registry = StyleRegistry()
+
+    assert [style.name for style in registry.sequence(4)] == [
+        "risograph",
+        "cyanotype",
+        "stippling",
+        "risograph",
+    ]
+
+    registry.set("cyanotype")
+
+    assert [style.name for style in registry.sequence(4)] == [
+        "cyanotype",
+        "stippling",
+        "risograph",
+        "cyanotype",
+    ]
+
+
 def test_style_registry_rejects_unknown_style():
     registry = StyleRegistry()
 

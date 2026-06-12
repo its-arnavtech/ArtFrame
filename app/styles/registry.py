@@ -19,6 +19,12 @@ class StyleRegistry:
     def current(self) -> StripStyle:
         return self._styles[self._order[self._current_index]]
 
+    def sequence(self, count: int) -> list[StripStyle]:
+        return [
+            self._styles[self._order[(self._current_index + offset) % len(self._order)]]
+            for offset in range(count)
+        ]
+
     def set(self, name: str) -> StripStyle:
         if name not in self._styles:
             raise KeyError(f"Unknown style: {name}")
