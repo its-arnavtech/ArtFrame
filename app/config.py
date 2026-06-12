@@ -16,3 +16,4 @@ class AppConfig:
     max_strip_height: float = 360.0
     smoothing_alpha: float = 0.35
     debug_hud: bool = True
+    debug_finger_overlay: bool = False

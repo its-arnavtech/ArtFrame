@@ -66,7 +66,8 @@ def main() -> None:
 
             fps = fps_counter.tick()
             if config.debug_hud:
-                output = draw_finger_points(output, smoothed_controls)
+                if config.debug_finger_overlay:
+                    output = draw_finger_points(output, smoothed_controls)
                 output = draw_hud(output, registry.current().name, tracking_ok, fps)
 
             cv2.imshow(WINDOW_NAME, output)
