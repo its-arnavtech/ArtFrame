@@ -28,6 +28,34 @@ class AnchorPair:
 
 
 @dataclass(frozen=True)
+class HandFingerPoints:
+    label: str
+    thumb: Point2D
+    index: Point2D
+    middle: Point2D
+    ring: Point2D
+    pinky: Point2D
+
+    def tips(self) -> tuple[Point2D, ...]:
+        return (self.thumb, self.index, self.middle, self.ring, self.pinky)
+
+    def pinch_anchor(self) -> Point2D:
+        return Point2D(
+            x=(self.thumb.x + self.index.x) / 2.0,
+            y=(self.thumb.y + self.index.y) / 2.0,
+        )
+
+
+@dataclass(frozen=True)
+class FingerControlPair:
+    left: HandFingerPoints
+    right: HandFingerPoints
+
+    def anchors(self) -> AnchorPair:
+        return AnchorPair(left=self.left.pinch_anchor(), right=self.right.pinch_anchor())
+
+
+@dataclass(frozen=True)
 class StripQuad:
     top_left: Point2D
     top_right: Point2D

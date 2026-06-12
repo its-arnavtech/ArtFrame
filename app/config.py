@@ -11,6 +11,6 @@ class AppConfig:
     canvas_height: int = 180
     strip_height_ratio: float = 0.32
     min_strip_height: float = 80.0
-    max_strip_height: float = 220.0
+    max_strip_height: float = 360.0
     smoothing_alpha: float = 0.35
     debug_hud: bool = True

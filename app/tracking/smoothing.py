@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.types import AnchorPair, Point2D
+from app.types import AnchorPair, FingerControlPair, HandFingerPoints, Point2D
 
 
 class PointSmoother:
@@ -34,6 +34,50 @@ class AnchorPairSmoother:
         if target is None:
             return None
         return AnchorPair(left=self._left.update(target.left), right=self._right.update(target.right))
+
+    def reset(self) -> None:
+        self._left.reset()
+        self._right.reset()
+
+
+class HandFingerSmoother:
+    def __init__(self, alpha: float) -> None:
+        self._thumb = PointSmoother(alpha)
+        self._index = PointSmoother(alpha)
+        self._middle = PointSmoother(alpha)
+        self._ring = PointSmoother(alpha)
+        self._pinky = PointSmoother(alpha)
+
+    def update(self, target: HandFingerPoints) -> HandFingerPoints:
+        return HandFingerPoints(
+            label=target.label,
+            thumb=self._thumb.update(target.thumb),
+            index=self._index.update(target.index),
+            middle=self._middle.update(target.middle),
+            ring=self._ring.update(target.ring),
+            pinky=self._pinky.update(target.pinky),
+        )
+
+    def reset(self) -> None:
+        self._thumb.reset()
+        self._index.reset()
+        self._middle.reset()
+        self._ring.reset()
+        self._pinky.reset()
+
+
+class FingerControlPairSmoother:
+    def __init__(self, alpha: float) -> None:
+        self._left = HandFingerSmoother(alpha)
+        self._right = HandFingerSmoother(alpha)
+
+    def update(self, target: FingerControlPair | None) -> FingerControlPair | None:
+        if target is None:
+            return None
+        return FingerControlPair(
+            left=self._left.update(target.left),
+            right=self._right.update(target.right),
+        )
 
     def reset(self) -> None:
         self._left.reset()
