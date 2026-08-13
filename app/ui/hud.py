@@ -2,18 +2,30 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+from collections.abc import Sequence
 
 from app.types import FingerControlPair, HandFingerPoints
 
 
-def draw_hud(frame_bgr: np.ndarray, style_name: str, tracking_ok: bool, fps: float) -> np.ndarray:
+def draw_hud(
+    frame_bgr: np.ndarray,
+    style_name: str,
+    tracking_ok: bool,
+    fps: float,
+    extra_lines: Sequence[str] = (),
+    *,
+    strip_enabled: bool = True,
+    fluid_enabled: bool = True,
+) -> np.ndarray:
     output = frame_bgr.copy()
-    status = "tracking" if tracking_ok else "waiting for hands"
+    status = "active" if tracking_ok else "waiting for two hands"
     lines = [
-        f"style: {style_name}",
-        f"status: {status}",
+        f"strip [S]: {'on' if strip_enabled else 'off'} ({style_name})",
+        f"fluid [W]: {'on' if fluid_enabled else 'off'}",
+        f"hands: {status}",
         f"fps: {fps:.1f}",
     ]
+    lines.extend(extra_lines)
 
     x, y = 16, 28
     for index, line in enumerate(lines):

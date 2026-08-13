@@ -1,8 +1,8 @@
 # ArtFrame
 
-`ArtFrame` is a modular Python scaffold for a real-time webcam AR effect. The intended final experience is a virtual graphic strip that appears between both hands and follows their movement, with artistic rendering styles such as risograph, cyanotype, and stippling.
+`ArtFrame` is a modular real-time webcam artwork. Its original two-hand AR strip remains intact, including the risograph, cyanotype, and stippling style renderers. A persistent ModernGL fluid simulation transports two-hand velocity and dye through a lower-resolution GPU field. Independent display-resolution stages turn those fields into ink, fluid glass, or chromatic liquid and can then apply a physical-print Risograph treatment.
 
-This first phase focuses on clean architecture, interfaces, placeholder implementations, and basic tests. The current runtime also tracks individual fingertip points, connects matching fingers as rails, and renders style bands in the spaces between those rails. The advanced visual effects and production-grade hand foreground compositing are intentionally left for later phases.
+Both tracked hands can occlude the liquid with a stable, feathered landmark silhouette. The mask and unmodified camera frame are uploaded to persistent GPU textures, so real hand pixels are composited above the liquid without framebuffer readback.
 
 ## Setup
 
@@ -18,7 +18,19 @@ pip install -r requirements.txt
 python run.py
 ```
 
-The app opens the default webcam and displays the live frame. If both hands are detected, matching fingertips are connected as lines: thumb-to-thumb, index-to-index, middle-to-middle, ring-to-ring, and pinky-to-pinky. The sections between those lines are filled with cycling style renderers such as risograph, cyanotype, and stippling. Debug dots show the tracked thumb, index, middle, ring, and pinky tips for each hand.
+ArtFrame opens only the camera index configured in `AppConfig.camera_index` (index `0` by default). It does not scan or fall back to other devices and contains no NVIDIA Broadcast selection path. Delivered frames are resized to the configured processing size when necessary.
+
+Camera capture runs on a background thread. Slow camera devices therefore update the latest camera image at their own rate without blocking MediaPipe, animation, input, or the GPU display. Tracking and interaction velocity are updated only when a new camera frame arrives.
+
+### Camera troubleshooting
+
+- ArtFrame prints the configured physical-camera index and OpenCV backend at startup.
+- Automatic fallback to other camera indices and explicit DirectShow virtual-camera selection are disabled.
+- If no physical camera appears, check Windows **Privacy & security -> Camera**, close other camera applications, and restart ArtFrame.
+- Tracking uses the MediaPipe Tasks `HandLandmarker` API and the bundled `assets/models/hand_landmarker.task` model. The one-time TensorFlow Lite delegate and feedback-manager lines are upstream runtime diagnostics, not deprecation warnings.
+- A protobuf deprecation warning indicates an old environment. Reinstall `requirements.txt`; the pinned MediaPipe Tasks runtime does not require protobuf.
+
+The app retains OpenCV webcam capture, MediaPipe tracking, and the existing CPU strip/style composition. The composed background, raw camera foreground, and one-channel hand mask cross the CPU/GPU boundary as normalized 8-bit (`f1`) texture uploads; integer textures are reserved for integer samplers. The simulation, artistic material, occlusion composition, and final presentation remain GPU-resident with no framebuffer readback. If GPU initialization fails, the OpenCV rendering path remains available and applies the same hand mask with CPU alpha composition.
 
 ## Controls
 
@@ -26,30 +38,194 @@ The app opens the default webcam and displays the live frame. If both hands are 
 - `2`: cyanotype style
 - `3`: stippling style
 - `space`: next style
+- `S`: toggle the legacy two-hand strip layer (off by default)
+- `W`: toggle the fluid-motion layer (on by default)
+- `v`: cycle liquid debug visualization
+- `m`: next liquid material (the default is `fluid_glass`)
+- `p`: next liquid palette
+- `k`: next Riso palette
+- `r`: next Riso quality profile
+- `t`: toggle delayed GPU timer-query instrumentation
 - `q` or `ESC`: quit
 
 ## Architecture
 
 - `app/camera`: webcam capture
-- `app/tracking`: MediaPipe hand detection, fingertip extraction, anchor extraction, and smoothing
-- `app/geometry`: finger-driven section construction and perspective warping
-- `app/styles`: style interface, placeholder renderers, and style registry
-- `app/compositing`: overlay compositing
-- `app/ui`: keyboard controls and HUD drawing
-- `app/utils`: small utility helpers
+- `app/tracking`: MediaPipe detection, fingertip extraction, anchors, and smoothing
+- `app/interaction`: tracker-neutral `HandControl` and `InteractionState`
+- `app/geometry`: strip construction and perspective warping
+- `app/styles`: risograph, cyanotype, stippling, and style registry
+- `app/graphics/backends`: GLFW display and concrete ModernGL backend
+- `app/graphics/liquid`: configuration, stable sources, solver resources, pass graph/executor, stress inputs, and orchestration
+- `app/graphics/liquid/materials`: solver-independent material interface, registry, palettes, and display renderer
+- `app/graphics/print`: solver-independent print-treatment contract, Risograph configuration, palettes, quality profiles, deterministic screening, renderer, and persistent resources
+- `app/graphics/layer_compositor.py`: final camera/art/hand layer composition
+- `app/graphics/particles`: independent particle architecture
+- `app/graphics/shaders`: numerical, material, layered-composite, and presentation GLSL passes
+- `app/compositing`: strip overlay and tracker-neutral hand-mask generation
+- `app/ui`: controls and optional diagnostics
 
-The main loop in `app/main.py` delegates work to the modules above so later effects can be upgraded without turning the runtime into one large script.
+The dependency direction remains:
 
-## Implementation Phases
+```text
+PERCEPTION -> INTERACTION STATE -> GPU SIMULATION -> MATERIAL -> PRINT TREATMENT -> LAYER COMPOSITION -> DISPLAY
+```
 
-1. Scaffold architecture, data types, placeholder styles, and tests.
-2. Improve fingertip/anchor robustness and temporal behavior.
-3. Replace placeholder visual styles with richer risograph, cyanotype, and stippling effects.
-4. Add better masking, occlusion, and hand foreground compositing.
-5. Tune performance and polish the live AR experience.
+Graphics consumes `InteractionState`, never detections or landmarks. Hand landmark conversion stops at `app/compositing/hand_occlusion.py`; the graphics API receives only a camera image and mask texture. Persistent textures, framebuffers, programs, fullscreen geometry, and optional query rings are owned below `app/graphics`. `main.py` remains orchestration only.
 
-## Tests
+## Rendering pipeline
+
+```text
+mirrored camera -> tracking -> InteractionState
+                -> landmark hull -> expand -> feather -> temporal mask
+
+composed camera background ----+
+solver fields -> liquid material -> Riso print treatment -+
+composed camera background ------------------------------+-> GPU layered composite -> presentation
+raw camera + hand mask ----------------------------------+
+```
+
+The layered composite order is camera background, liquid material, optional print treatment, then real hand pixels. Camera and mask textures use the same top-left image coordinates and the same OpenGL Y conversion. The fluid fields use normalized bottom-left UVs; hand source and material interaction uniforms explicitly invert normalized Y once. Simulation resolution is independent of camera and display resolution. Fluid glass is the default material and the Risograph print treatment is disabled by default; both architectures remain independently selectable/configurable.
+
+## Fluid simulation
+
+The GPU graph executes:
+
+```text
+velocity injection -> velocity advection -> curl -> vorticity confinement
+-> closed-wall boundary -> divergence -> pressure (Jacobi N times)
+-> velocity projection -> closed-wall boundary
+-> dye injection -> dye advection
+```
+
+Velocity, dye, and pressure use ping-pong framebuffers. Divergence and curl have dedicated single-channel half-float targets. The solver ends after field generation. A separate material pass samples those lower-resolution fields into a display-resolution half-float target. The print and final-composition stages consume those results without owning or changing the solver. The default 960x540 display with `simulation_scale=0.5` runs numerical passes at 480x270 with 20 pressure iterations.
+
+Advection backtraces normalized coordinates and uses GPU linear filtering for bilinear sampling. Textures do not repeat, and neighbor reads clamp to half a texel inside the domain. A dedicated velocity pass zeros the outer 1.5 texels before divergence and after projection, producing a contained closed/no-slip wall. Pressure uses clamped neighbors for a simple zero-normal-gradient wall condition. The boundary pass also clears non-finite velocity and enforces a documented magnitude ceiling to protect half-float fields from isolated spikes.
+
+Vorticity confinement derives force from the curl field and its magnitude gradient; it does not add procedural noise. Its conservative default restores small eddies lost through semi-Lagrangian dissipation.
+
+`LiquidSourceStabilizer` is separate from tracking smoothing. It limits normalized source velocity while preserving direction, applies timestep-aware exponential response to position, velocity, pinch, and openness, and briefly holds a disappearing source while its influence decays. Raw interaction state remains untouched.
+
+The frame delta is scaled and clamped before simulation. Velocity and dye retention values are exponentiated relative to 60 Hz, so decay is not directly frame-rate dependent. Optional dye diffusion defaults to zero.
+
+## Hand occlusion
+
+`HandMaskGenerator` accepts neutral `HandDetection` values rather than importing MediaPipe. For each sufficiently confident hand it normalizes the 21 landmark positions, builds and fills a convex hull, dilates it with an elliptical kernel, feathers it with a Gaussian blur, and applies timestep-aware exponential temporal smoothing. Both hands are accumulated into one mask.
+
+Expansion, feather radius, confidence threshold, temporal response, and the enabled flag live in `AppConfig.hand_occlusion`. Expansion and feather are fractions of the shorter frame dimension, keeping their visual scale independent of camera resolution. This first implementation intentionally favors stability and speed over semantic segmentation; it cannot recover untracked wrist/forearm pixels or gaps beyond the landmark hull.
+
+## Liquid materials and palettes
+
+`LiquidMaterial` describes a fragment shader plus shared uniforms. It receives dye, velocity, curl/vorticity, pressure, display/simulation metadata, elapsed time, palette colors, and `InteractionState`; it never owns or advances the solver and knows nothing about MediaPipe.
+
+Available materials:
+
+- `ink`: layered pigment density, translucent edges, flow-aligned paper grain, local gradients, pressure, velocity, and curl detail
+- `fluid_glass`: screen-space refraction, density-gradient normals, soft specular bands, tint, and rim definition
+- `chromatic`: restrained field-dependent channel separation with velocity and vorticity color variation
+
+Available palettes:
+
+- `neutral_chrome` (default for fluid glass)
+- `cyan_blue`
+- `magenta_orange`
+- `blue_violet`
+- `monochrome_ink`
+
+Custom `LiquidPalette` instances can be registered without changing the solver or shaders. Material appearance currently maps hand velocity to energy/detail, average pinch to intensity, and distance between hands to material scale. Lightweight procedural grain is static in material space and modulated by flow; it is not random animated noise.
+
+## Risograph print treatment
+
+The GPU print stage is architecturally separate from both simulation and material rendering. Its first pass derives primary ink density, secondary ink density, edges, and breakup from actual dye density, material coverage, velocity, and vorticity. Its second pass renders two stable angled screens, subtle registration offsets, subtractive-style ink overlap, paper color/fibers, deterministic grain, optional posterization, and a small motion-aware persistent-history blend.
+
+The effect is anchored to display pixels and uses no frame-randomized noise, preventing stationary dots and paper grain from crawling. Low dye produces sparse coverage, medium dye exposes the halftone, and high dye produces dense overlapping inks. Hand velocity adds structured detail and local registration movement; pinch increases concentration, openness broadens coverage, and hand distance increases spread.
+
+Riso palettes are independent from liquid palettes and define primary ink, secondary ink, paper, and accent:
+
+- `cyan_blue`
+- `magenta_orange`
+- `blue_violet`
+- `monochrome_ink`
+
+Quality profiles do not change display or fluid resolution:
+
+- `draft`: coarser screen detail, reduced paper/registration detail, no temporal history
+- `standard`: balanced screen, paper, registration, and light history
+- `high`: finer screen/detail response, full registration behavior, and stronger stable history
+
+`AppConfig.print_treatment` controls enablement, treatment selection, palette, quality, dot scale/strength, threshold, screen angle, density response, registration, paper/grain, edge breakup, and posterization.
+
+## Configuration
+
+GPU settings live in `AppConfig`; solver settings live in its `liquid` field:
+
+- simulation/visualization enabled flags
+- simulation scale
+- timestep scale and maximum timestep
+- velocity injection strength and mapping scale
+- source radius and source stabilization times
+- maximum source and fluid velocities
+- velocity and dye decay
+- dye injection, velocity coupling, and optional diffusion
+- pressure iteration count
+- vorticity strength
+- per-hand colors
+- initial debug view
+- optional GPU timing and query lag
+
+Artistic settings live in `AppConfig.liquid_art`: initial material, palette, intensity, and procedural texture strength. Hand-mask settings live independently in `AppConfig.hand_occlusion`.
+
+Benchmark helpers expose 320x180, 480x270, 640x360, and 960x540 profiles for a 960x540 display, plus 10, 20, 30, and 40 pressure iterations. Runtime reconfiguration creates new size-dependent targets first, swaps them in, releases old targets, and reuses compiled programs.
+
+## Diagnostics
+
+The `v` key cycles:
+
+- normal composite
+- dye
+- velocity magnitude
+- velocity direction
+- pressure
+- divergence
+- vorticity
+- source locations
+- ink material
+- fluid glass material
+- chromatic material
+- hand mask
+- selected material output
+- Riso density
+- Riso halftone
+- Riso registration
+- paper texture
+- final Riso output
+
+GPU timing is disabled by default. When enabled, independent non-overlapping query rings measure camera upload, liquid simulation, liquid material, Riso treatment, final composition, and presentation. Results are read only when a ring slot is reused several frames later. GPU frame time is their rolling-average sum and is displayed separately from CPU frame time and display FPS.
+
+## Implementation phases
+
+1. **Completed:** original strip, tracking, styles, warping, and composition.
+2. **Completed:** tracker-neutral interaction and graphics architecture.
+3. **Completed:** ModernGL/GLFW backend and direct GPU presentation.
+4. **Completed:** persistent liquid resource and pass architecture.
+5. **Completed:** GPU advection, pressure projection, dye transport, and visualization.
+6. **Completed:** delayed GPU timing, deterministic stress inputs, source stabilization, vorticity, closed walls, debug fields, and safe target recreation.
+7. **Completed:** two-hand feathered occlusion, GPU foreground composition, simulation/material separation, ink, fluid glass, chromatic liquid, and palettes.
+8. **Completed:** strict physical-camera selection, modular GPU print architecture, Risograph screening, physical ink overlap, paper treatment, stable registration, quality profiles, debug layers, and split timings.
+9. Next: cyanotype/cyanotone as a separate print treatment. Segmentation, stippling, particles, reaction diffusion, and new solvers remain deferred.
+
+## Tests and benchmarks
 
 ```bash
-pytest
+python -m pytest
+python -m compileall -q app tests run.py
+python -m app.graphics.gpu_smoke
+python -m app.graphics.gpu_smoke --visible --camera-index 0 --frames 600
+python -m app.graphics.gpu_smoke --gpu-timing --stress --cycle-debug --cycle-materials --cycle-palettes --cycle-riso --frames 600
+python -m app.graphics.gpu_benchmark --frames 240
+python -m app.graphics.gpu_benchmark --frames 240 --pressure-sweep
 ```
+
+Normal pytest never creates a GPU context. Stress mode cycles rapid two-hand motion, crossings, dropout, stationary/rapid combinations, extreme and tiny velocities, boundary sources, alternating directions, pinch changes, and changing hand distance. By default the GPU smoke test also uploads a deterministic, soft two-hand foreground mask; `--no-occlusion` disables that fixture. GPU smoke tests allocate every resource, compile every solver, material, Riso, and composite shader, and execute the complete graph. None reads rendered pixels back to the CPU.
+
+On hybrid-GPU Windows laptops, GLFW/WGL uses the adapter selected by Windows and the display driver. ArtFrame reports the actual OpenGL vendor, renderer, and version. It contains no RTX-specific code and does not alter system GPU configuration.

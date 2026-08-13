@@ -5,6 +5,8 @@ __pycache__/
 .env.*
 !.env.example
 .pytest_cache/
+.package-cache/
+.matplotlib-cache/
 .vscode/
 .idea/
 DS_Store
