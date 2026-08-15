@@ -130,6 +130,7 @@ def _source_uniforms(
             f"u_{prefix}_velocity": (0.0, 0.0),
             f"u_{prefix}_pinch": 0.0,
             f"u_{prefix}_openness": 0.0,
+            f"u_{prefix}_influence": 0.0,
             f"u_{prefix}_color": color,
         }
     return {
@@ -138,6 +139,7 @@ def _source_uniforms(
         f"u_{prefix}_velocity": (hand.velocity.x, -hand.velocity.y),
         f"u_{prefix}_pinch": hand.pinch_amount,
         f"u_{prefix}_openness": hand.openness,
+        f"u_{prefix}_influence": hand.influence,
         f"u_{prefix}_color": color,
     }
 

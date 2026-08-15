@@ -40,6 +40,9 @@ class GpuGraphicsRenderer:
         self._foreground_texture: GpuTexture | None = None
         self._hand_mask_texture: GpuTexture | None = None
         self._camera_size: tuple[int, int] | None = None
+        self._last_camera_frame: np.ndarray | None = None
+        self._last_foreground_frame: np.ndarray | None = None
+        self._last_hand_mask: np.ndarray | None = None
         self._closed = False
         self._hand_occlusion = False
         self._display_fps = 0.0
@@ -170,18 +173,7 @@ class GpuGraphicsRenderer:
                 TextureSpec(*camera_size, components=3, dtype="f1")
             )
             self._camera_size = camera_size
-
-        foreground_texture = self._camera_texture
-        if foreground_bgr is not None:
-            if foreground_bgr.shape != frame_bgr.shape or foreground_bgr.dtype != np.uint8:
-                raise ValueError("foreground_bgr must match frame_bgr")
-            if self._foreground_texture is None or self._foreground_texture.spec.size != camera_size:
-                if self._foreground_texture is not None:
-                    self._foreground_texture.release()
-                self._foreground_texture = backend.create_texture(
-                    TextureSpec(*camera_size, components=3, dtype="f1")
-                )
-            foreground_texture = self._foreground_texture
+            self._last_camera_frame = None
 
         mask_upload: np.ndarray | None = None
         if self._hand_mask_texture is None or self._hand_mask_texture.spec.size != camera_size:
@@ -190,6 +182,7 @@ class GpuGraphicsRenderer:
             self._hand_mask_texture = backend.create_texture(
                 TextureSpec(*camera_size, components=1, dtype="f1")
             )
+            self._last_hand_mask = None
             mask_upload = np.zeros((camera_size[1], camera_size[0], 1), dtype=np.uint8)
         if hand_mask is not None:
             if hand_mask.ndim == 2:
@@ -197,18 +190,45 @@ class GpuGraphicsRenderer:
             expected_mask_shape = (camera_size[1], camera_size[0], 1)
             if hand_mask.shape != expected_mask_shape or hand_mask.dtype != np.uint8:
                 raise ValueError(f"hand_mask must have shape {expected_mask_shape} and dtype uint8")
-            mask_upload = hand_mask
-            self._hand_occlusion = bool(np.any(hand_mask))
+            if hand_mask is not self._last_hand_mask:
+                mask_upload = hand_mask
+                self._hand_occlusion = bool(np.any(hand_mask))
+                self._last_hand_mask = hand_mask
         elif self._hand_occlusion:
             mask_upload = np.zeros((camera_size[1], camera_size[0], 1), dtype=np.uint8)
             self._hand_occlusion = False
+            self._last_hand_mask = None
+
+        foreground_texture = self._camera_texture
+        if foreground_bgr is not None:
+            if foreground_bgr.shape != frame_bgr.shape or foreground_bgr.dtype != np.uint8:
+                raise ValueError("foreground_bgr must match frame_bgr")
+            if self._hand_occlusion and foreground_bgr is not frame_bgr:
+                if (
+                    self._foreground_texture is None
+                    or self._foreground_texture.spec.size != camera_size
+                ):
+                    if self._foreground_texture is not None:
+                        self._foreground_texture.release()
+                    self._foreground_texture = backend.create_texture(
+                        TextureSpec(*camera_size, components=3, dtype="f1")
+                    )
+                    self._last_foreground_frame = None
+                foreground_texture = self._foreground_texture
 
         if self._timing_enabled:
             self._upload_timer.begin()
         try:
-            backend.upload_texture(self._camera_texture, frame_bgr)
-            if foreground_bgr is not None and self._foreground_texture is not None:
+            if frame_bgr is not self._last_camera_frame:
+                backend.upload_texture(self._camera_texture, frame_bgr)
+                self._last_camera_frame = frame_bgr
+            if (
+                foreground_texture is self._foreground_texture
+                and foreground_bgr is not None
+                and foreground_bgr is not self._last_foreground_frame
+            ):
                 backend.upload_texture(self._foreground_texture, foreground_bgr)
+                self._last_foreground_frame = foreground_bgr
             if mask_upload is not None:
                 backend.upload_texture(self._hand_mask_texture, mask_upload)
         finally:

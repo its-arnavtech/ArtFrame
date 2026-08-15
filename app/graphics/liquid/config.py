@@ -46,7 +46,9 @@ class LiquidSimulationConfig:
     maximum_source_velocity: float = 4.0
     maximum_fluid_velocity: float = 4.5
     source_smoothing_time: float = 0.018
+    source_prediction_time: float = 0.04
     source_dropout_hold: float = 0.08
+    source_fade_time: float = 0.32
     gpu_timing_enabled: bool = False
     gpu_timing_query_lag: int = 4
     debug_view: LiquidDebugView = LiquidDebugView.COMPOSITE
@@ -77,7 +79,12 @@ class LiquidSimulationConfig:
             raise ValueError("maximum_source_velocity must be positive")
         if self.maximum_fluid_velocity <= 0.0:
             raise ValueError("maximum_fluid_velocity must be positive")
-        if self.source_smoothing_time < 0.0 or self.source_dropout_hold < 0.0:
+        if (
+            self.source_smoothing_time < 0.0
+            or self.source_prediction_time < 0.0
+            or self.source_dropout_hold < 0.0
+            or self.source_fade_time < 0.0
+        ):
             raise ValueError("source stabilization times must not be negative")
         if self.gpu_timing_query_lag < 2:
             raise ValueError("gpu_timing_query_lag must be at least two")

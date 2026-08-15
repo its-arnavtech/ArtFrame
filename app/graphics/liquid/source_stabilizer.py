@@ -36,6 +36,8 @@ def _mix_point(first: Point2D, second: Point2D, alpha: float) -> Point2D:
 @dataclass
 class _StableSource:
     control: HandControl
+    target: HandControl
+    prediction_seconds: float = 0.0
     missing_seconds: float = 0.0
 
 
@@ -68,15 +70,22 @@ class LiquidSourceStabilizer:
             if previous is None:
                 return None
             previous.missing_seconds += delta_seconds
-            if previous.missing_seconds > self._config.source_dropout_hold:
+            fade_seconds = max(self._config.source_fade_time, 1e-9)
+            fade_elapsed = max(
+                previous.missing_seconds - self._config.source_dropout_hold,
+                0.0,
+            )
+            if fade_elapsed > self._config.source_fade_time:
                 del self._sources[label]
                 return None
-            fade = 1.0 - previous.missing_seconds / max(self._config.source_dropout_hold, 1e-9)
+            fade = max(0.0, 1.0 - fade_elapsed / fade_seconds)
+            fade = fade * fade * (3.0 - 2.0 * fade)
             held = HandControl(
                 position=previous.control.position,
                 velocity=Point2D(previous.control.velocity.x * fade, previous.control.velocity.y * fade),
-                pinch_amount=previous.control.pinch_amount * fade,
+                pinch_amount=previous.control.pinch_amount,
                 openness=previous.control.openness,
+                influence=fade,
             )
             previous.control = held
             return held
@@ -87,17 +96,41 @@ class LiquidSourceStabilizer:
             velocity=limited_velocity,
             pinch_amount=target.pinch_amount,
             openness=target.openness,
+            influence=target.influence,
         )
         if previous is None:
-            self._sources[label] = _StableSource(limited)
+            self._sources[label] = _StableSource(limited, target)
             return limited
+
+        if target is previous.target:
+            previous.prediction_seconds = min(
+                previous.prediction_seconds + delta_seconds,
+                self._config.source_prediction_time,
+            )
+        else:
+            previous.target = target
+            previous.prediction_seconds = 0.0
+
+        prediction = previous.prediction_seconds
+        predicted_position = Point2D(
+            max(0.0, min(1.0, limited.position.x + limited.velocity.x * prediction)),
+            max(0.0, min(1.0, limited.position.y + limited.velocity.y * prediction)),
+        )
+        predicted = HandControl(
+            position=predicted_position,
+            velocity=limited.velocity,
+            pinch_amount=limited.pinch_amount,
+            openness=limited.openness,
+            influence=limited.influence,
+        )
 
         alpha = exponential_response(delta_seconds, self._config.source_smoothing_time)
         smoothed = HandControl(
-            position=_mix_point(previous.control.position, limited.position, alpha),
-            velocity=_mix_point(previous.control.velocity, limited.velocity, alpha),
-            pinch_amount=_mix(previous.control.pinch_amount, limited.pinch_amount, alpha),
-            openness=_mix(previous.control.openness, limited.openness, alpha),
+            position=_mix_point(previous.control.position, predicted.position, alpha),
+            velocity=_mix_point(previous.control.velocity, predicted.velocity, alpha),
+            pinch_amount=_mix(previous.control.pinch_amount, predicted.pinch_amount, alpha),
+            openness=_mix(previous.control.openness, predicted.openness, alpha),
+            influence=_mix(previous.control.influence, predicted.influence, alpha),
         )
         previous.control = smoothed
         previous.missing_seconds = 0.0

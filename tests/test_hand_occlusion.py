@@ -63,6 +63,22 @@ def test_low_confidence_hand_does_not_enter_mask():
     assert not np.any(mask)
 
 
+def test_mask_target_can_be_reused_between_camera_updates():
+    generator = HandMaskGenerator(
+        HandOcclusionConfig(expansion=0.0, feather_radius=0.0, temporal_response=0.0)
+    )
+    generator.update([_hand("Left", 20, 20, 80, 80)], (100, 100), 0.01)
+
+    reused = generator.update(
+        [],
+        (100, 100),
+        0.01,
+        refresh_target=False,
+    )
+
+    assert reused[50, 50, 0] == 255
+
+
 def test_cpu_fallback_foreground_composition_uses_feather_alpha():
     base = np.zeros((1, 1, 3), dtype=np.uint8)
     foreground = np.full((1, 1, 3), 200, dtype=np.uint8)

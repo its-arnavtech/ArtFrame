@@ -25,3 +25,12 @@ def test_strip_and_fluid_layers_toggle_independently() -> None:
     controls.handle_key(ord("W"))
     assert controls.strip_enabled is True
     assert controls.fluid_enabled is False
+
+
+def test_camera_cycle_request_is_consumed_once() -> None:
+    controls = Controls(StyleRegistry())
+
+    controls.handle_key(ord("C"))
+
+    assert controls.consume_camera_cycle_request()
+    assert not controls.consume_camera_cycle_request()

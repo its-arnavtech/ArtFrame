@@ -14,16 +14,36 @@ class Webcam:
         width: int,
         height: int,
         mirror: bool = True,
+        capture_width: int | None = None,
+        capture_height: int | None = None,
+        fps: float | None = None,
+        backend: int | None = None,
+        device_name: str | None = None,
     ) -> None:
+        if width <= 0 or height <= 0:
+            raise ValueError("output dimensions must be positive")
         self.camera_index = camera_index
-        self._capture, self._backend = self._open_capture(camera_index)
+        self.device_name = device_name or f"Camera {camera_index}"
+        self._capture, self._backend = (
+            self._open_capture(camera_index)
+            if backend is None
+            else self._open_capture(camera_index, backend)
+        )
         self._target_size = (width, height)
         self._mirror = mirror
         if not self._capture.isOpened():
+            self._capture.release()
             raise RuntimeError(
-                f"Could not open physical camera index {camera_index}; "
-                "automatic fallback to other cameras is disabled"
+                f"Could not open {self.device_name!r} at camera index {camera_index}; "
+                "automatic fallback to other cameras is disabled. Close other camera "
+                "applications and check Windows camera permissions before retrying"
             )
+        self._configure_capture(capture_width, capture_height, fps)
+        self._capture_size = (
+            round(self._capture_property(cv2.CAP_PROP_FRAME_WIDTH, width)),
+            round(self._capture_property(cv2.CAP_PROP_FRAME_HEIGHT, height)),
+        )
+        self._capture_fps = self._capture_property(cv2.CAP_PROP_FPS, fps or 0.0)
 
         self._frame: np.ndarray | None = None
         self._frame_sequence = 0
@@ -44,6 +64,8 @@ class Webcam:
     def read_latest(
         self,
         timeout_seconds: float = 2.0,
+        *,
+        copy_frame: bool = True,
     ) -> tuple[bool, np.ndarray | None, bool]:
         if timeout_seconds < 0.0:
             raise ValueError("timeout_seconds must not be negative")
@@ -58,7 +80,8 @@ class Webcam:
                 return False, None, False
             is_new = self._frame_sequence != self._last_read_sequence
             self._last_read_sequence = self._frame_sequence
-            return True, self._frame.copy(), is_new
+            frame = self._frame.copy() if copy_frame else self._frame
+            return True, frame, is_new
 
     @property
     def has_new_frame(self) -> bool:
@@ -72,6 +95,18 @@ class Webcam:
         except cv2.error:
             return str(self._backend)
 
+    @property
+    def capture_size(self) -> tuple[int, int]:
+        return self._capture_size
+
+    @property
+    def output_size(self) -> tuple[int, int]:
+        return self._target_size
+
+    @property
+    def capture_fps(self) -> float:
+        return self._capture_fps
+
     def release(self) -> None:
         with self._condition:
             if self._stopping:
@@ -82,14 +117,50 @@ class Webcam:
         self._thread.join(timeout=2.5)
 
     @staticmethod
-    def _open_capture(camera_index: int) -> tuple[cv2.VideoCapture, int]:
-        backends = (cv2.CAP_MSMF, cv2.CAP_ANY)
+    def _open_capture(
+        camera_index: int,
+        requested_backend: int | None = None,
+    ) -> tuple[cv2.VideoCapture, int]:
+        backends = (
+            (requested_backend,)
+            if requested_backend is not None
+            else (cv2.CAP_MSMF, cv2.CAP_ANY)
+        )
         for backend in backends:
             capture = cv2.VideoCapture(camera_index, backend)
             if capture.isOpened():
                 return capture, backend
             capture.release()
         return cv2.VideoCapture(), cv2.CAP_ANY
+
+    def _configure_capture(
+        self,
+        width: int | None,
+        height: int | None,
+        fps: float | None,
+    ) -> None:
+        for name, value in (("capture width", width), ("capture height", height), ("fps", fps)):
+            if value is not None and value <= 0:
+                raise ValueError(f"{name} must be positive")
+        set_property = getattr(self._capture, "set", None)
+        if set_property is None:
+            return
+        if width is not None and height is not None:
+            set_property(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        if width is not None:
+            set_property(cv2.CAP_PROP_FRAME_WIDTH, float(width))
+        if height is not None:
+            set_property(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+        if fps is not None:
+            set_property(cv2.CAP_PROP_FPS, float(fps))
+        set_property(cv2.CAP_PROP_BUFFERSIZE, 1.0)
+
+    def _capture_property(self, property_id: int, fallback: float) -> float:
+        get_property = getattr(self._capture, "get", None)
+        if get_property is None:
+            return float(fallback)
+        value = float(get_property(property_id))
+        return value if value > 0.0 else float(fallback)
 
     @staticmethod
     def frame_signal(frame: np.ndarray) -> tuple[float, float]:

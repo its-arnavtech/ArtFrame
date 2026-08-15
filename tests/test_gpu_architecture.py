@@ -257,7 +257,7 @@ def test_liquid_reconfiguration_reallocates_targets_without_recompiling_programs
     assert all(target.released for target in first_targets)
     assert len(backend.programs) == compiled_programs
     assert effect.diagnostics["simulation_resolution"] == "320x180"
-    assert effect.diagnostics["material"] == "chromatic"
+    assert effect.diagnostics["material"] == "pinch_fluid"
     assert effect.diagnostics["palette"] == "cyan_blue"
     assert effect.diagnostics["riso_palette"] == "magenta_orange"
     assert effect.diagnostics["riso_quality"] == "high"

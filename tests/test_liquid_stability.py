@@ -31,17 +31,36 @@ def test_exponential_response_is_frame_delta_aware():
     assert one_step == pytest.approx(1.0 - (1.0 - half_step) ** 2)
 
 
-def test_source_stabilizer_holds_brief_dropout_then_removes_source():
-    config = LiquidSimulationConfig(source_dropout_hold=0.08)
+def test_source_stabilizer_holds_then_fades_dropout_before_removing_source():
+    config = LiquidSimulationConfig(source_dropout_hold=0.05, source_fade_time=0.20)
     stabilizer = LiquidSourceStabilizer(config)
     stabilizer.update(InteractionState(left=_control(Point2D(1.0, 0.0))), 1.0 / 60.0)
 
     held = stabilizer.update(InteractionState(), 0.04)
-    removed = stabilizer.update(InteractionState(), 0.05)
+    fading = stabilizer.update(InteractionState(), 0.07)
+    removed = stabilizer.update(InteractionState(), 0.15)
 
     assert held.left is not None
-    assert 0.0 < held.left.velocity.x < 1.0
+    assert held.left.influence == pytest.approx(1.0)
+    assert fading.left is not None
+    assert 0.0 < fading.left.influence < 1.0
+    assert 0.0 < fading.left.velocity.x < 1.0
     assert removed.left is None
+
+
+def test_source_stabilizer_predicts_between_repeated_tracking_results():
+    config = LiquidSimulationConfig(
+        source_smoothing_time=0.0,
+        source_prediction_time=0.04,
+    )
+    stabilizer = LiquidSourceStabilizer(config)
+    control = _control(Point2D(1.0, 0.0))
+
+    first = stabilizer.update(InteractionState(left=control), 0.01)
+    predicted = stabilizer.update(InteractionState(left=control), 0.02)
+
+    assert first.left is not None and predicted.left is not None
+    assert predicted.left.position.x == pytest.approx(first.left.position.x + 0.02)
 
 
 @pytest.mark.parametrize("scenario", tuple(StressScenario))

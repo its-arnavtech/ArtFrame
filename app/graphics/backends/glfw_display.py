@@ -92,6 +92,7 @@ class GlfwDisplay:
             glfw.KEY_P: ord("p"),
             glfw.KEY_K: ord("k"),
             glfw.KEY_R: ord("r"),
+            glfw.KEY_C: ord("c"),
         }
         if key in key_map:
             self._key_events.append(key_map[key])

@@ -18,6 +18,10 @@ class LiquidMaterialMetadata:
     elapsed_seconds: float
     intensity: float
     texture_strength: float
+    glass_refraction: float
+    glass_dispersion: float
+    glass_roughness: float
+    glass_edge_brightness: float
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,10 @@ class LiquidMaterial(ABC):
             "u_time": metadata.elapsed_seconds,
             "u_material_intensity": metadata.intensity,
             "u_texture_strength": metadata.texture_strength,
+            "u_glass_refraction": metadata.glass_refraction,
+            "u_glass_dispersion": metadata.glass_dispersion,
+            "u_glass_roughness": metadata.glass_roughness,
+            "u_glass_edge_brightness": metadata.glass_edge_brightness,
         }
         uniforms.update(material_interaction_uniforms(interaction))
         return uniforms
@@ -70,8 +78,15 @@ class LiquidMaterial(ABC):
 
 def material_interaction_uniforms(interaction: InteractionState) -> dict[str, Any]:
     active = interaction.active_hands()
-    velocity_energy = sum(math.hypot(hand.velocity.x, hand.velocity.y) for hand in active)
-    pinch = sum(hand.pinch_amount for hand in active) / len(active) if active else 0.0
+    velocity_energy = sum(
+        math.hypot(hand.velocity.x, hand.velocity.y) * hand.influence for hand in active
+    )
+    influence_total = sum(hand.influence for hand in active)
+    pinch = (
+        sum(hand.pinch_amount * hand.influence for hand in active) / influence_total
+        if influence_total > 1.0e-9
+        else 0.0
+    )
     hand_distance = 0.0
     if interaction.left is not None and interaction.right is not None:
         hand_distance = math.hypot(
@@ -97,4 +112,5 @@ def material_interaction_uniforms(interaction: InteractionState) -> dict[str, An
         )
         uniforms[f"u_{name}_pinch"] = hand.pinch_amount if hand is not None else 0.0
         uniforms[f"u_{name}_openness"] = hand.openness if hand is not None else 0.0
+        uniforms[f"u_{name}_influence"] = hand.influence if hand is not None else 0.0
     return uniforms

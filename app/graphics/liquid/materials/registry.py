@@ -4,11 +4,17 @@ from app.graphics.liquid.materials.base import LiquidMaterial
 from app.graphics.liquid.materials.chromatic import ChromaticMaterial
 from app.graphics.liquid.materials.fluid_glass import FluidGlassMaterial
 from app.graphics.liquid.materials.ink import InkMaterial
+from app.graphics.liquid.materials.pinch_fluid import PinchFluidMaterial
 
 
 class LiquidMaterialRegistry:
     def __init__(self, materials: tuple[LiquidMaterial, ...] | None = None) -> None:
-        entries = materials or (InkMaterial(), FluidGlassMaterial(), ChromaticMaterial())
+        entries = materials or (
+            InkMaterial(),
+            FluidGlassMaterial(),
+            PinchFluidMaterial(),
+            ChromaticMaterial(),
+        )
         self._materials = {material.name: material for material in entries}
         self._order = [material.name for material in entries]
         if not self._order:

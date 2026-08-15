@@ -14,12 +14,14 @@ uniform vec2 u_left_position;
 uniform vec2 u_left_velocity;
 uniform float u_left_pinch;
 uniform float u_left_openness;
+uniform float u_left_influence;
 uniform vec3 u_left_color;
 uniform int u_right_active;
 uniform vec2 u_right_position;
 uniform vec2 u_right_velocity;
 uniform float u_right_pinch;
 uniform float u_right_openness;
+uniform float u_right_influence;
 uniform vec3 u_right_color;
 
 vec4 inject_source(
@@ -29,9 +31,10 @@ vec4 inject_source(
     vec2 source_velocity,
     float pinch,
     float openness,
+    float influence,
     vec3 source_color
 ) {
-    if (source_active == 0) {
+    if (source_active == 0 || influence <= 0.0001) {
         return dye;
     }
     float radius = u_source_radius * mix(0.8, 1.65, openness);
@@ -40,7 +43,7 @@ vec4 inject_source(
     float speed_coupling = 1.0 + min(length(source_velocity), 3.0) * u_velocity_coupling;
     float gesture_strength = mix(0.3, 1.0, pinch);
     float amount = clamp(
-        falloff * gesture_strength * speed_coupling * u_injection_strength * u_timestep,
+        falloff * gesture_strength * speed_coupling * influence * u_injection_strength * u_timestep,
         0.0,
         1.0
     );
@@ -58,6 +61,7 @@ void main() {
         u_left_velocity,
         u_left_pinch,
         u_left_openness,
+        u_left_influence,
         u_left_color
     );
     dye = inject_source(
@@ -67,6 +71,7 @@ void main() {
         u_right_velocity,
         u_right_pinch,
         u_right_openness,
+        u_right_influence,
         u_right_color
     );
     frag_dye = dye;

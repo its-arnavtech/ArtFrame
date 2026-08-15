@@ -18,15 +18,17 @@ pip install -r requirements.txt
 python run.py
 ```
 
-ArtFrame opens only the camera index configured in `AppConfig.camera_index` (index `0` by default). It does not scan or fall back to other devices and contains no NVIDIA Broadcast selection path. Delivered frames are resized to the configured processing size when necessary.
+ArtFrame maintains a name-aware catalog of cameras exposed by the platform's native OpenCV backend. The catalog refreshes in the background, so cameras inserted or removed while the app is running appear without restarting. NVIDIA Broadcast is filtered by name before a capture is opened. The configured Logitech C920e is preferred by stable device name, with camera index `0` as a fallback preference if that name is absent. The preferred device receives a short head start; if its driver stalls or it does not deliver a frame, other permitted cameras are validated concurrently and the first working camera becomes active. The default capture request is native FHD (`1920x1080`, MJPEG, 30 FPS); the capture thread downsamples it once to an HD (`1280x720`) artwork/display frame. The actual negotiated camera mode is printed at startup because camera drivers may choose a nearby supported mode.
 
-Camera capture runs on a background thread. Slow camera devices therefore update the latest camera image at their own rate without blocking MediaPipe, animation, input, or the GPU display. Tracking and interaction velocity are updated only when a new camera frame arrives.
+Camera discovery, capture, switch validation, and MediaPipe perception run outside the render thread. Slow device drivers, camera delivery, or hand inference therefore cannot block animation, input, or GPU presentation. Both capture and tracking use latest-frame semantics: stale queued frames are dropped instead of adding latency. Interaction state is updated only for a completed tracking result, while the liquid source stabilizer predicts a short distance between results to keep 60 FPS motion continuous.
 
 ### Camera troubleshooting
 
-- ArtFrame prints the configured physical-camera index and OpenCV backend at startup.
-- Automatic fallback to other camera indices and explicit DirectShow virtual-camera selection are disabled.
-- If no physical camera appears, check Windows **Privacy & security -> Camera**, close other camera applications, and restart ArtFrame.
+- ArtFrame prints every detected camera plus the active device, OpenCV backend, negotiated resolution, and FPS.
+- Press `C` to cycle through available permitted cameras. A replacement becomes active only after it delivers a valid frame; a failed switch leaves the current camera running.
+- If no camera is present, ArtFrame remains open and automatically connects when one is inserted.
+- NVIDIA Broadcast is excluded before capture. The Windows build enumerates and captures through Media Foundation rather than opening unknown numeric indices.
+- If no physical camera appears, check Windows **Privacy & security -> Camera** and close other camera applications. ArtFrame will continue polling without requiring a restart.
 - Tracking uses the MediaPipe Tasks `HandLandmarker` API and the bundled `assets/models/hand_landmarker.task` model. The one-time TensorFlow Lite delegate and feedback-manager lines are upstream runtime diagnostics, not deprecation warnings.
 - A protobuf deprecation warning indicates an old environment. Reinstall `requirements.txt`; the pinned MediaPipe Tasks runtime does not require protobuf.
 
@@ -40,8 +42,9 @@ The app retains OpenCV webcam capture, MediaPipe tracking, and the existing CPU 
 - `space`: next style
 - `S`: toggle the legacy two-hand strip layer (off by default)
 - `W`: toggle the fluid-motion layer (on by default)
+- `C`: cycle through cameras detected at startup or inserted while running
 - `v`: cycle liquid debug visualization
-- `m`: next liquid material (the default is `fluid_glass`)
+- `m`: next liquid material (`fluid_glass` -> `pinch_fluid` -> `chromatic` -> `ink`)
 - `p`: next liquid palette
 - `k`: next Riso palette
 - `r`: next Riso quality profile
@@ -50,8 +53,8 @@ The app retains OpenCV webcam capture, MediaPipe tracking, and the existing CPU 
 
 ## Architecture
 
-- `app/camera`: webcam capture
-- `app/tracking`: MediaPipe detection, fingertip extraction, anchors, and smoothing
+- `app/camera`: name-aware hot-plug catalog, nonblocking validated camera switching, and threaded webcam capture
+- `app/tracking`: asynchronous MediaPipe detection, fingertip extraction, anchors, and smoothing
 - `app/interaction`: tracker-neutral `HandControl` and `InteractionState`
 - `app/geometry`: strip construction and perspective warping
 - `app/styles`: risograph, cyanotype, stippling, and style registry
@@ -98,19 +101,19 @@ velocity injection -> velocity advection -> curl -> vorticity confinement
 -> dye injection -> dye advection
 ```
 
-Velocity, dye, and pressure use ping-pong framebuffers. Divergence and curl have dedicated single-channel half-float targets. The solver ends after field generation. A separate material pass samples those lower-resolution fields into a display-resolution half-float target. The print and final-composition stages consume those results without owning or changing the solver. The default 960x540 display with `simulation_scale=0.5` runs numerical passes at 480x270 with 20 pressure iterations.
+Velocity, dye, and pressure use ping-pong framebuffers. Divergence and curl have dedicated single-channel half-float targets. The solver ends after field generation. A separate material pass samples those lower-resolution fields into a display-resolution half-float target. The print and final-composition stages consume those results without owning or changing the solver. The default 1280x720 HD display with `simulation_scale=0.375` runs numerical passes at 480x270 with 18 pressure iterations. Camera resolution, display resolution, tracking resolution, and fluid resolution remain independent, so higher-quality input does not multiply solver cost.
 
 Advection backtraces normalized coordinates and uses GPU linear filtering for bilinear sampling. Textures do not repeat, and neighbor reads clamp to half a texel inside the domain. A dedicated velocity pass zeros the outer 1.5 texels before divergence and after projection, producing a contained closed/no-slip wall. Pressure uses clamped neighbors for a simple zero-normal-gradient wall condition. The boundary pass also clears non-finite velocity and enforces a documented magnitude ceiling to protect half-float fields from isolated spikes.
 
 Vorticity confinement derives force from the curl field and its magnitude gradient; it does not add procedural noise. Its conservative default restores small eddies lost through semi-Lagrangian dissipation.
 
-`LiquidSourceStabilizer` is separate from tracking smoothing. It limits normalized source velocity while preserving direction, applies timestep-aware exponential response to position, velocity, pinch, and openness, and briefly holds a disappearing source while its influence decays. Raw interaction state remains untouched.
+`LiquidSourceStabilizer` is separate from tracking smoothing. It limits normalized source velocity while preserving direction, applies timestep-aware exponential response to position, velocity, pinch, openness, and influence, briefly predicts source position between asynchronous tracking results, and holds a disappearing source before smoothly fading its simulation and material influence. Raw perception state remains untouched.
 
 The frame delta is scaled and clamped before simulation. Velocity and dye retention values are exponentiated relative to 60 Hz, so decay is not directly frame-rate dependent. Optional dye diffusion defaults to zero.
 
 ## Hand occlusion
 
-`HandMaskGenerator` accepts neutral `HandDetection` values rather than importing MediaPipe. For each sufficiently confident hand it normalizes the 21 landmark positions, builds and fills a convex hull, dilates it with an elliptical kernel, feathers it with a Gaussian blur, and applies timestep-aware exponential temporal smoothing. Both hands are accumulated into one mask.
+`HandMaskGenerator` accepts neutral `HandDetection` values rather than importing MediaPipe. For each sufficiently confident hand it normalizes the 21 landmark positions, builds and fills a convex hull, dilates it with an elliptical kernel, feathers it with a Gaussian blur, and applies timestep-aware exponential temporal smoothing. Both hands are accumulated into one mask. By default the mask is generated at half display resolution only when tracking completes, then enlarged once and reused until the next result.
 
 Expansion, feather radius, confidence threshold, temporal response, and the enabled flag live in `AppConfig.hand_occlusion`. Expansion and feather are fractions of the shorter frame dimension, keeping their visual scale independent of camera resolution. This first implementation intentionally favors stability and speed over semantic segmentation; it cannot recover untracked wrist/forearm pixels or gaps beyond the landmark hull.
 
@@ -121,7 +124,8 @@ Expansion, feather radius, confidence threshold, temporal response, and the enab
 Available materials:
 
 - `ink`: layered pigment density, translucent edges, flow-aligned paper grain, local gradients, pressure, velocity, and curl detail
-- `fluid_glass`: screen-space refraction, density-gradient normals, soft specular bands, tint, and rim definition
+- `fluid_glass`: flow-driven screen-space transmission, density-gradient lens normals, restrained spectral dispersion, Fresnel reflection, internal scene reflection, softbox highlights, curvature shadows, and edge caustics. It intentionally avoids independent animated noise and mirrored chrome so stationary fluid remains optically stable and transparent.
+- `pinch_fluid`: filled refractive liquid volumes centered on each thumb/index midpoint. Finger motion stretches the volume into a short trail and drives its internal refraction, dye, pressure, and curl detail; loss of tracking fades the complete volume instead of removing it in one frame.
 - `chromatic`: restrained field-dependent channel separation with velocity and vorticity color variation
 
 Available palettes:
@@ -159,6 +163,10 @@ Quality profiles do not change display or fluid resolution:
 
 GPU settings live in `AppConfig`; solver settings live in its `liquid` field:
 
+- native camera capture width, height, and requested FPS
+- camera catalog refresh interval and excluded device-name tokens
+- independent HD output/display and low-resolution tracking sizes
+- target display FPS and vsync
 - simulation/visualization enabled flags
 - simulation scale
 - timestep scale and maximum timestep
@@ -173,9 +181,25 @@ GPU settings live in `AppConfig`; solver settings live in its `liquid` field:
 - initial debug view
 - optional GPU timing and query lag
 
-Artistic settings live in `AppConfig.liquid_art`: initial material, palette, intensity, and procedural texture strength. Hand-mask settings live independently in `AppConfig.hand_occlusion`.
+Artistic settings live in `AppConfig.liquid_art`: initial material, palette, intensity, procedural texture strength, glass refraction, dispersion, roughness, and edge brightness. Hand-mask settings live independently in `AppConfig.hand_occlusion`.
 
-Benchmark helpers expose 320x180, 480x270, 640x360, and 960x540 profiles for a 960x540 display, plus 10, 20, 30, and 40 pressure iterations. Runtime reconfiguration creates new size-dependent targets first, swaps them in, releases old targets, and reuses compiled programs.
+Benchmark helpers expose common simulation scales plus 10, 20, 30, and 40 pressure iterations. Runtime reconfiguration creates new size-dependent targets first, swaps them in, releases old targets, and reuses compiled programs.
+
+The clean artwork view is the default (`debug_hud=False`). The HUD and CPU finger overlay can be enabled independently for diagnostics. A 60 FPS frame pacer prevents an unbounded render loop from starving the asynchronous tracker on systems where vsync is unavailable or ineffective.
+
+## Performance architecture
+
+The default quality/performance split is:
+
+```text
+camera       1920x1080 @ 30 FPS (native detail)
+display      1280x720  @ up to 60 FPS (HD artwork)
+tracking      480x270  (asynchronous latest frame)
+hand mask     640x360  (updated with tracking)
+fluid         480x270  (persistent GPU fields, 18 pressure iterations)
+```
+
+Unchanged camera frames, foreground frames, and hand masks are not uploaded again. CPU overlays avoid frame copies when disabled. These optimizations preserve the existing OpenCV fallback and strip/style architecture; they only change scheduling, resolution allocation, and redundant work.
 
 ## Diagnostics
 
@@ -212,7 +236,11 @@ GPU timing is disabled by default. When enabled, independent non-overlapping que
 6. **Completed:** delayed GPU timing, deterministic stress inputs, source stabilization, vorticity, closed walls, debug fields, and safe target recreation.
 7. **Completed:** two-hand feathered occlusion, GPU foreground composition, simulation/material separation, ink, fluid glass, chromatic liquid, and palettes.
 8. **Completed:** strict physical-camera selection, modular GPU print architecture, Risograph screening, physical ink overlap, paper treatment, stable registration, quality profiles, debug layers, and split timings.
-9. Next: cyanotype/cyanotone as a separate print treatment. Segmentation, stippling, particles, reaction diffusion, and new solvers remain deferred.
+9. **Completed:** native FHD camera negotiation, HD presentation, asynchronous latest-frame tracking, half-resolution mask processing, cached GPU uploads, 60 FPS pacing, and short source prediction for smoother motion.
+10. **Completed:** physically inspired fluid-glass transmission, restrained dispersion, Fresnel reflection, curvature/caustic edges, smooth surface unions, solver-only optical motion, and cleaner low-diffusion flow tuning.
+11. **Completed:** filled pinch-fluid material mode, convex pinch-volume refraction, motion-driven internal detail/trails, and influence-based source fade-out across interaction, simulation, and material layers.
+12. **Completed:** name-aware camera discovery, NVIDIA Broadcast pre-capture filtering, background hot-plug polling, nonblocking validated switching, no-camera startup, and camera-coordinate tracking reset.
+13. Next: cyanotype/cyanotone as a separate print treatment. Segmentation, stippling, particles, reaction diffusion, and new solvers remain deferred.
 
 ## Tests and benchmarks
 

@@ -32,6 +32,12 @@ class Controls:
         self.should_quit = False
         self.strip_enabled = False
         self.fluid_enabled = True
+        self._camera_cycle_requested = False
+
+    def consume_camera_cycle_request(self) -> bool:
+        requested = self._camera_cycle_requested
+        self._camera_cycle_requested = False
+        return requested
 
     def handle_key(self, key: int) -> None:
         key = key & 0xFF
@@ -50,6 +56,8 @@ class Controls:
         elif key == ord("s"):
             self.strip_enabled = not self.strip_enabled
             print(f"Strip layer: {'enabled' if self.strip_enabled else 'disabled'}")
+        elif key == ord("c"):
+            self._camera_cycle_requested = True
         elif key == ord("w") and self._graphics_debug is not None:
             self.fluid_enabled = self._graphics_debug.toggle_liquid_layer()
             print(f"Fluid layer: {'enabled' if self.fluid_enabled else 'disabled'}")

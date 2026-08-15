@@ -58,3 +58,15 @@ def test_active_hands_omits_inactive_controls():
     active = HandControl(Point2D(0.25, 0.5), Point2D(0, 0), 0.0, 0.0)
 
     assert InteractionState(left=inactive, right=active).active_hands() == (active,)
+
+
+def test_active_hands_omits_fully_faded_controls():
+    faded = HandControl(
+        Point2D(0.5, 0.5),
+        Point2D(0, 0),
+        0.0,
+        0.0,
+        influence=0.0,
+    )
+
+    assert InteractionState(left=faded).active_hands() == ()

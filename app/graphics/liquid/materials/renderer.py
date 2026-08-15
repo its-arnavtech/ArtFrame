@@ -88,6 +88,10 @@ class LiquidArtisticRenderer:
             elapsed_seconds=self._elapsed_seconds,
             intensity=self.config.intensity,
             texture_strength=self.config.texture_strength,
+            glass_refraction=self.config.glass_refraction,
+            glass_dispersion=self.config.glass_dispersion,
+            glass_roughness=self.config.glass_roughness,
+            glass_edge_brightness=self.config.glass_edge_brightness,
         )
         uniforms = material.uniforms(palette, metadata, interaction)
         uniforms["u_texel_size"] = self._texel_size

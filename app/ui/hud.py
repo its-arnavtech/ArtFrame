@@ -16,8 +16,9 @@ def draw_hud(
     *,
     strip_enabled: bool = True,
     fluid_enabled: bool = True,
+    copy_frame: bool = True,
 ) -> np.ndarray:
-    output = frame_bgr.copy()
+    output = frame_bgr.copy() if copy_frame else frame_bgr
     status = "active" if tracking_ok else "waiting for two hands"
     lines = [
         f"strip [S]: {'on' if strip_enabled else 'off'} ({style_name})",

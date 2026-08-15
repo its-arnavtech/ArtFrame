@@ -17,6 +17,7 @@ class HandControl:
     pinch_amount: float
     openness: float
     active: bool = True
+    influence: float = 1.0
 
     def __post_init__(self) -> None:
         values = (
@@ -35,6 +36,8 @@ class HandControl:
             raise ValueError("pinch_amount must be in the range [0, 1]")
         if not 0.0 <= self.openness <= 1.0:
             raise ValueError("openness must be in the range [0, 1]")
+        if not 0.0 <= self.influence <= 1.0:
+            raise ValueError("influence must be in the range [0, 1]")
 
 
 @dataclass(frozen=True)
@@ -46,7 +49,9 @@ class InteractionState:
 
     def active_hands(self) -> tuple[HandControl, ...]:
         return tuple(
-            hand for hand in (self.left, self.right) if hand is not None and hand.active
+            hand
+            for hand in (self.left, self.right)
+            if hand is not None and hand.active and hand.influence > 0.0
         )
 
 
