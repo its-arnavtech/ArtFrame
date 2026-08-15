@@ -18,14 +18,14 @@ pip install -r requirements.txt
 python run.py
 ```
 
-ArtFrame maintains a name-aware catalog of cameras exposed by the platform's native OpenCV backend. The catalog refreshes in the background, so cameras inserted or removed while the app is running appear without restarting. NVIDIA Broadcast is filtered by name before a capture is opened. The configured Logitech C920e is preferred by stable device name, with camera index `0` as a fallback preference if that name is absent. The preferred device receives a short head start; if its driver stalls or it does not deliver a frame, other permitted cameras are validated concurrently and the first working camera becomes active. The default capture request is native FHD (`1920x1080`, MJPEG, 30 FPS); the capture thread downsamples it once to an HD (`1280x720`) artwork/display frame. The actual negotiated camera mode is printed at startup because camera drivers may choose a nearby supported mode.
+ArtFrame maintains a name-aware catalog of cameras exposed by the platform's native OpenCV backend. The catalog refreshes in the background, so cameras inserted or removed while the app is running appear without restarting. On this experimental branch the catalog accepts only the exact physical device name `Logi Webcam C920e`; ASUS and NVIDIA Broadcast endpoints are rejected before any capture is opened. The default capture request is native FHD (`1920x1080`, MJPEG, 30 FPS); the capture thread downsamples it once to an HD (`1280x720`) artwork/display frame. The actual negotiated camera mode is printed at startup because camera drivers may choose a nearby supported mode.
 
 Camera discovery, capture, switch validation, and MediaPipe perception run outside the render thread. Slow device drivers, camera delivery, or hand inference therefore cannot block animation, input, or GPU presentation. Both capture and tracking use latest-frame semantics: stale queued frames are dropped instead of adding latency. Interaction state is updated only for a completed tracking result, while the liquid source stabilizer predicts a short distance between results to keep 60 FPS motion continuous.
 
 ### Camera troubleshooting
 
 - ArtFrame prints every detected camera plus the active device, OpenCV backend, negotiated resolution, and FPS.
-- Press `C` to cycle through available permitted cameras. A replacement becomes active only after it delivers a valid frame; a failed switch leaves the current camera running.
+- Press `C` to cycle through available permitted cameras. On the Logitech-only branch no other camera is eligible, so cycling is intentionally unavailable.
 - If no camera is present, ArtFrame remains open and automatically connects when one is inserted.
 - NVIDIA Broadcast is excluded before capture. The Windows build enumerates and captures through Media Foundation rather than opening unknown numeric indices.
 - If no physical camera appears, check Windows **Privacy & security -> Camera** and close other camera applications. ArtFrame will continue polling without requiring a restart.

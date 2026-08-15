@@ -89,6 +89,22 @@ def test_catalog_detects_hotplug_and_filters_nvidia_broadcast_before_capture():
         catalog.close()
 
 
+def test_catalog_can_be_restricted_to_one_exact_physical_camera_name():
+    logitech = _device(0, "Logi Webcam C920e", "logitech")
+    asus = _device(1, "ASUS 5M WebCam", "asus")
+    similarly_named = _device(2, "Logi Webcam C920e Virtual", "virtual-logitech")
+    provider = _MutableProvider((asus, similarly_named, logitech))
+    catalog = CameraCatalog(
+        provider,
+        refresh_interval=60.0,
+        allowed_names=("logi webcam c920e",),
+    )
+    try:
+        assert catalog.snapshot().devices == (logitech,)
+    finally:
+        catalog.close()
+
+
 def test_manager_cycles_only_after_replacement_delivers_a_frame():
     first = _device(0, "First", "first")
     second = _device(1, "Second", "second")

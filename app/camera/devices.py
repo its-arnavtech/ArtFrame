@@ -63,12 +63,14 @@ class CameraCatalog:
         provider: CameraDeviceProvider | None = None,
         *,
         refresh_interval: float = 2.0,
+        allowed_names: tuple[str, ...] = (),
         excluded_name_tokens: tuple[str, ...] = ("nvidia broadcast",),
     ) -> None:
         if refresh_interval <= 0.0:
             raise ValueError("refresh_interval must be positive")
         self._provider = provider or OpenCvCameraDeviceProvider()
         self._refresh_interval = refresh_interval
+        self._allowed_names = frozenset(name.strip().casefold() for name in allowed_names)
         self._excluded_name_tokens = tuple(token.casefold() for token in excluded_name_tokens)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -88,7 +90,11 @@ class CameraCatalog:
     def refresh_now(self) -> CameraCatalogSnapshot:
         try:
             discovered = self._provider.enumerate()
-            devices = _filter_and_order_devices(discovered, self._excluded_name_tokens)
+            devices = _filter_and_order_devices(
+                discovered,
+                self._excluded_name_tokens,
+                self._allowed_names,
+            )
             error = None
         except Exception as exception:
             with self._lock:
@@ -114,10 +120,13 @@ class CameraCatalog:
 def _filter_and_order_devices(
     devices: tuple[CameraDevice, ...],
     excluded_name_tokens: tuple[str, ...],
+    allowed_names: frozenset[str] = frozenset(),
 ) -> tuple[CameraDevice, ...]:
     unique: dict[str, CameraDevice] = {}
     for device in devices:
         normalized_name = device.name.casefold()
+        if allowed_names and normalized_name not in allowed_names:
+            continue
         if any(token in normalized_name for token in excluded_name_tokens):
             continue
         unique.setdefault(device.stable_id, device)

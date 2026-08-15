@@ -31,6 +31,7 @@ def main() -> None:
     config = AppConfig()
     camera_catalog = CameraCatalog(
         refresh_interval=config.camera_refresh_interval,
+        allowed_names=config.allowed_camera_names,
         excluded_name_tokens=config.excluded_camera_name_tokens,
     )
     camera_manager = CameraManager(

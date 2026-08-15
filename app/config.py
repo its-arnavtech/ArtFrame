@@ -15,6 +15,7 @@ class AppConfig:
     camera_fps: float = 30.0
     camera_refresh_interval: float = 2.0
     camera_startup_timeout: float = 6.0
+    allowed_camera_names: tuple[str, ...] = ("Logi Webcam C920e",)
     excluded_camera_name_tokens: tuple[str, ...] = ("nvidia broadcast",)
     frame_width: int = 1280
     frame_height: int = 720
