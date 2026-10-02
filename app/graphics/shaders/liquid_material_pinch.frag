@@ -39,71 +39,10 @@ vec2 metric(vec2 point) {
     return vec2(point.x * aspect_ratio(), point.y);
 }
 
-float segment_distance(vec2 point, vec2 start, vec2 end) {
-    vec2 p = metric(point);
-    vec2 a = metric(start);
-    vec2 b = metric(end);
-    vec2 segment = b - a;
-    float projection = clamp(
-        dot(p - a, segment) / max(dot(segment, segment), 0.000001),
-        0.0,
-        1.0
-    );
-    return length(p - (a + segment * projection));
-}
-
-float smooth_union(float first, float second, float softness) {
-    float blend = clamp(0.5 + 0.5 * (first - second) / softness, 0.0, 1.0);
-    return mix(second, first, blend) + softness * blend * (1.0 - blend);
-}
-
-vec2 trail_vector(vec2 velocity) {
-    float speed = length(velocity);
-    return speed > 0.0001
-        ? velocity / speed * min(speed, 2.8) * 0.060
-        : vec2(0.0);
-}
-
-float pinch_source(
-    vec2 point,
-    int source_active,
-    vec2 position,
-    vec2 velocity,
-    float pinch,
-    float openness,
-    float influence
-) {
-    if (source_active == 0 || influence <= 0.0001) {
-        return 0.0;
-    }
-    float radius = mix(0.055, 0.092, openness) * mix(1.08, 0.90, pinch);
-    vec2 tail = position - trail_vector(velocity);
-    float distance_to_trail = segment_distance(point, position, tail);
-    float volume = 1.0 - smoothstep(radius * 0.72, radius, distance_to_trail);
-    float membrane = 1.0 - smoothstep(radius, radius * 1.23, distance_to_trail);
-    return smooth_union(volume, membrane * 0.32, 0.12) * influence;
-}
-
 float pinch_field(vec2 uv) {
-    float left = pinch_source(
-        uv,
-        u_left_active,
-        u_left_position,
-        u_left_velocity,
-        u_left_pinch,
-        u_left_openness,
-        u_left_influence
-    );
-    float right = pinch_source(
-        uv,
-        u_right_active,
-        u_right_position,
-        u_right_velocity,
-        u_right_pinch,
-        u_right_openness,
-        u_right_influence
-    );
-    return clamp(smooth_union(left, right, 0.14), 0.0, 1.0);
+    vec4 dye = texture(u_dye, clamp(uv, 0.0, 1.0));
+    float density = max(dye.a, max(dye.r, max(dye.g, dye.b)));
+    return smoothstep(0.018, 0.46, clamp(density, 0.0, 1.0));
 }
 
 vec3 camera_sample(vec2 uv) {

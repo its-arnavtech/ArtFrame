@@ -105,6 +105,23 @@ def test_catalog_can_be_restricted_to_one_exact_physical_camera_name():
         catalog.close()
 
 
+def test_catalog_can_allow_logitech_and_asus_while_rejecting_virtual_devices():
+    logitech = _device(0, "Logi Webcam C920e", "logitech")
+    asus = _device(1, "ASUS 5M WebCam", "asus")
+    broadcast = _device(2, "Camera (NVIDIA Broadcast)", "broadcast")
+    unknown = _device(3, "Unknown Virtual Camera", "unknown")
+    provider = _MutableProvider((broadcast, unknown, asus, logitech))
+    catalog = CameraCatalog(
+        provider,
+        refresh_interval=60.0,
+        allowed_names=("Logi Webcam C920e", "ASUS 5M WebCam"),
+    )
+    try:
+        assert catalog.snapshot().devices == (logitech, asus)
+    finally:
+        catalog.close()
+
+
 def test_manager_cycles_only_after_replacement_delivers_a_frame():
     first = _device(0, "First", "first")
     second = _device(1, "Second", "second")

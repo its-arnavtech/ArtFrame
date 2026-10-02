@@ -33,104 +33,9 @@ uniform float u_right_pinch;
 uniform float u_right_openness;
 uniform float u_right_influence;
 
-float aspect_ratio() {
-    return u_display_size.x / max(u_display_size.y, 1.0);
-}
-
-vec2 metric(vec2 point) {
-    return vec2(point.x * aspect_ratio(), point.y);
-}
-
-float segment_distance(vec2 point, vec2 start, vec2 end) {
-    vec2 p = metric(point);
-    vec2 a = metric(start);
-    vec2 b = metric(end);
-    vec2 segment = b - a;
-    float projection = clamp(
-        dot(p - a, segment) / max(dot(segment, segment), 0.000001),
-        0.0,
-        1.0
-    );
-    return length(p - (a + segment * projection));
-}
-
-float capsule(vec2 point, vec2 start, vec2 end, float radius, float feather) {
-    return 1.0 - smoothstep(radius, radius + feather, segment_distance(point, start, end));
-}
-
-float smooth_union(float first, float second, float softness) {
-    float blend = clamp(0.5 + 0.5 * (first - second) / softness, 0.0, 1.0);
-    return mix(second, first, blend) + softness * blend * (1.0 - blend);
-}
-
 float dye_density(vec2 uv) {
     vec4 dye = texture(u_dye, clamp(uv, 0.0, 1.0));
     return clamp(max(dye.a, max(dye.r, max(dye.g, dye.b))), 0.0, 1.0);
-}
-
-vec2 limited_trail(vec2 velocity) {
-    float speed = length(velocity);
-    return speed > 0.0001
-        ? velocity / speed * min(speed, 2.2) * 0.050
-        : vec2(0.0);
-}
-
-float hand_shape(
-    vec2 point,
-    int source_active,
-    vec2 position,
-    vec2 velocity,
-    float pinch,
-    float openness,
-    float influence
-) {
-    if (source_active == 0 || influence <= 0.0001) {
-        return 0.0;
-    }
-    float radius = mix(0.044, 0.088, openness) * mix(1.10, 0.86, pinch);
-    vec2 tail = position - limited_trail(velocity);
-    float core = capsule(point, position, tail, radius, 0.020);
-    float membrane = capsule(point, position, tail, radius * 1.34, 0.034) * 0.28;
-    return smooth_union(core, membrane, 0.12) * influence;
-}
-
-float bridge_shape(vec2 point) {
-    if (
-        u_left_active == 0 || u_right_active == 0
-        || u_left_influence <= 0.0001 || u_right_influence <= 0.0001
-    ) {
-        return 0.0;
-    }
-    float average_open = 0.5 * (u_left_openness + u_right_openness);
-    float average_pinch = 0.5 * (u_left_pinch + u_right_pinch);
-    float radius = mix(0.050, 0.108, average_open) * mix(0.84, 1.12, average_pinch);
-    float core = capsule(point, u_left_position, u_right_position, radius, 0.026);
-    float membrane = capsule(
-        point,
-        u_left_position,
-        u_right_position,
-        radius * 1.28,
-        0.042
-    ) * 0.25;
-    return smooth_union(core, membrane, 0.13) * min(u_left_influence, u_right_influence);
-}
-
-vec2 source_lens(
-    vec2 point,
-    int source_active,
-    vec2 position,
-    float openness,
-    float influence
-) {
-    if (source_active == 0 || influence <= 0.0001) {
-        return vec2(0.0);
-    }
-    vec2 delta = metric(point) - metric(position);
-    float radius = mix(0.064, 0.110, openness);
-    float normalized_distance = clamp(length(delta) / radius, 0.0, 1.0);
-    float lens_profile = sin(normalized_distance * 3.14159265) * influence;
-    vec2 direction = delta / max(length(delta), 0.00001);
-    return vec2(direction.x / aspect_ratio(), direction.y) * lens_profile;
 }
 
 vec2 field_warp(vec2 uv) {
@@ -145,28 +50,7 @@ vec2 field_warp(vec2 uv) {
 
 float glass_field(vec2 uv) {
     vec2 shaped_uv = field_warp(uv);
-    float transported = smoothstep(0.018, 0.50, dye_density(shaped_uv));
-    float left = hand_shape(
-        shaped_uv,
-        u_left_active,
-        u_left_position,
-        u_left_velocity,
-        u_left_pinch,
-        u_left_openness,
-        u_left_influence
-    );
-    float right = hand_shape(
-        shaped_uv,
-        u_right_active,
-        u_right_position,
-        u_right_velocity,
-        u_right_pinch,
-        u_right_openness,
-        u_right_influence
-    );
-    float source_surface = smooth_union(left, right, 0.16);
-    source_surface = smooth_union(source_surface, bridge_shape(shaped_uv), 0.18);
-    return clamp(smooth_union(transported * 0.90, source_surface, 0.14), 0.0, 1.0);
+    return smoothstep(0.018, 0.50, dye_density(shaped_uv));
 }
 
 vec3 camera_sample(vec2 uv) {
@@ -230,24 +114,8 @@ void main() {
     float pressure = clamp(texture(u_pressure, v_uv).r, -1.0, 1.0);
     vec2 flow_detail = velocity * (0.012 + u_texture_strength * 0.022);
     flow_detail += vec2(-velocity.y, velocity.x) * curl * 0.004;
-    vec2 volume_lens = source_lens(
-        v_uv,
-        u_left_active,
-        u_left_position,
-        u_left_openness,
-        u_left_influence
-    );
-    volume_lens += source_lens(
-        v_uv,
-        u_right_active,
-        u_right_position,
-        u_right_openness,
-        u_right_influence
-    );
-
     vec3 normal = normalize(vec3(
         -gradient * (12.0 + membrane * 10.0)
-            + volume_lens * 0.74
             + flow_detail * coverage,
         0.82 + coverage * 0.54
     ));

@@ -9,7 +9,7 @@ from app.graphics.gpu import GpuBackend, GpuProgram, GpuTexture
 from app.graphics.liquid.config import LiquidSimulationConfig
 from app.graphics.liquid.gpu_resources import LiquidGpuResources
 from app.graphics.shader import ShaderPass, ShaderSource, ShaderStage
-from app.interaction.hand_controls import HandControl, InteractionState
+from app.interaction.hand_controls import FINGERTIP_COUNT, HandControl, InteractionState
 
 
 class LiquidPassKind(Enum):
@@ -123,8 +123,26 @@ def _source_uniforms(
     hand: HandControl | None,
     color: tuple[float, float, float],
 ) -> dict[str, Any]:
+    sources = hand.fluid_sources() if hand is not None and hand.active else ()
+    fingertip_uniforms: dict[str, Any] = {
+        f"u_{prefix}_tip_count": len(sources),
+    }
+    for index in range(FINGERTIP_COUNT):
+        if index < len(sources):
+            position, velocity = sources[index]
+            fingertip_uniforms[f"u_{prefix}_tip{index}_position"] = (
+                position.x,
+                1.0 - position.y,
+            )
+            fingertip_uniforms[f"u_{prefix}_tip{index}_velocity"] = (
+                velocity.x,
+                -velocity.y,
+            )
+        else:
+            fingertip_uniforms[f"u_{prefix}_tip{index}_position"] = (0.5, 0.5)
+            fingertip_uniforms[f"u_{prefix}_tip{index}_velocity"] = (0.0, 0.0)
     if hand is None or not hand.active:
-        return {
+        uniforms = {
             f"u_{prefix}_active": 0,
             f"u_{prefix}_position": (0.5, 0.5),
             f"u_{prefix}_velocity": (0.0, 0.0),
@@ -133,7 +151,9 @@ def _source_uniforms(
             f"u_{prefix}_influence": 0.0,
             f"u_{prefix}_color": color,
         }
-    return {
+        uniforms.update(fingertip_uniforms)
+        return uniforms
+    uniforms = {
         f"u_{prefix}_active": 1,
         f"u_{prefix}_position": (hand.position.x, 1.0 - hand.position.y),
         f"u_{prefix}_velocity": (hand.velocity.x, -hand.velocity.y),
@@ -142,6 +162,8 @@ def _source_uniforms(
         f"u_{prefix}_influence": hand.influence,
         f"u_{prefix}_color": color,
     }
+    uniforms.update(fingertip_uniforms)
+    return uniforms
 
 
 def interaction_source_uniforms(

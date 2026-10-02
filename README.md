@@ -18,14 +18,14 @@ pip install -r requirements.txt
 python run.py
 ```
 
-ArtFrame maintains a name-aware catalog of cameras exposed by the platform's native OpenCV backend. The catalog refreshes in the background, so cameras inserted or removed while the app is running appear without restarting. On this experimental branch the catalog accepts only the exact physical device name `Logi Webcam C920e`; ASUS and NVIDIA Broadcast endpoints are rejected before any capture is opened. The default capture request is native FHD (`1920x1080`, MJPEG, 30 FPS); the capture thread downsamples it once to an HD (`1280x720`) artwork/display frame. The actual negotiated camera mode is printed at startup because camera drivers may choose a nearby supported mode.
+ArtFrame maintains a name-aware catalog of cameras exposed by the platform's native OpenCV backend. The catalog refreshes in the background, so cameras inserted or removed while the app is running appear without restarting. The physical `Logi Webcam C920e` and `ASUS 5M WebCam` are explicitly allowed; NVIDIA Broadcast and every unknown endpoint are rejected before any capture is opened. Logitech remains the preferred device, while the working ASUS camera is available as startup fallback and through the `C` runtime cycle control. The default capture request is native FHD (`1920x1080`, MJPEG, 30 FPS); the capture thread downsamples it once to an HD (`1280x720`) artwork/display frame. The actual negotiated camera mode is printed at startup because camera drivers may choose a nearby supported mode.
 
 Camera discovery, capture, switch validation, and MediaPipe perception run outside the render thread. Slow device drivers, camera delivery, or hand inference therefore cannot block animation, input, or GPU presentation. Both capture and tracking use latest-frame semantics: stale queued frames are dropped instead of adding latency. Interaction state is updated only for a completed tracking result, while the liquid source stabilizer predicts a short distance between results to keep 60 FPS motion continuous.
 
 ### Camera troubleshooting
 
 - ArtFrame prints every detected camera plus the active device, OpenCV backend, negotiated resolution, and FPS.
-- Press `C` to cycle through available permitted cameras. On the Logitech-only branch no other camera is eligible, so cycling is intentionally unavailable.
+- Press `C` to cycle between the permitted Logitech and ASUS cameras. A replacement becomes active only after it delivers a valid frame.
 - If no camera is present, ArtFrame remains open and automatically connects when one is inserted.
 - NVIDIA Broadcast is excluded before capture. The Windows build enumerates and captures through Media Foundation rather than opening unknown numeric indices.
 - If no physical camera appears, check Windows **Privacy & security -> Camera** and close other camera applications. ArtFrame will continue polling without requiring a restart.
@@ -74,7 +74,7 @@ The dependency direction remains:
 PERCEPTION -> INTERACTION STATE -> GPU SIMULATION -> MATERIAL -> PRINT TREATMENT -> LAYER COMPOSITION -> DISPLAY
 ```
 
-Graphics consumes `InteractionState`, never detections or landmarks. Hand landmark conversion stops at `app/compositing/hand_occlusion.py`; the graphics API receives only a camera image and mask texture. Persistent textures, framebuffers, programs, fullscreen geometry, and optional query rings are owned below `app/graphics`. `main.py` remains orchestration only.
+Graphics consumes `InteractionState`, never detections or landmarks. Each `HandControl` exposes five normalized fingertip positions and velocities in addition to its aggregate gesture values. The liquid solver treats every fingertip as an independent velocity and dye source; materials visualize only transported fluid and do not draw a hand/pinch marker or ring. Hand landmark conversion stops at `app/compositing/hand_occlusion.py`; the graphics API receives only a camera image and mask texture. Persistent textures, framebuffers, programs, fullscreen geometry, and optional timing query rings are owned below `app/graphics`. `main.py` remains orchestration only.
 
 ## Rendering pipeline
 

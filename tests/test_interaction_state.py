@@ -24,6 +24,14 @@ def test_builder_converts_pixel_points_to_normalized_controls():
     assert state.right is None
     assert state.left.position == Point2D(0.15, 0.5)
     assert state.left.velocity == Point2D(0.0, 0.0)
+    assert state.left.fingertips == (
+        Point2D(0.1, 0.5),
+        Point2D(0.2, 0.5),
+        Point2D(0.3, 0.4),
+        Point2D(0.375, 0.45),
+        Point2D(0.45, 0.55),
+    )
+    assert state.left.fingertip_velocities == (Point2D(0.0, 0.0),) * 5
     assert 0.0 <= state.left.pinch_amount <= 1.0
     assert 0.0 <= state.left.openness <= 1.0
     assert state.left.active
@@ -38,6 +46,9 @@ def test_builder_calculates_normalized_velocity_over_time():
     assert state.left is not None
     assert state.left.velocity.x == pytest.approx(0.2)
     assert state.left.velocity.y == pytest.approx(0.0)
+    assert len(state.left.fingertip_velocities) == 5
+    assert all(velocity.x == pytest.approx(0.2) for velocity in state.left.fingertip_velocities)
+    assert all(velocity.y == pytest.approx(0.0) for velocity in state.left.fingertip_velocities)
 
 
 def test_missing_hand_clears_velocity_history():

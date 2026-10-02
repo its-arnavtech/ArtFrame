@@ -236,7 +236,9 @@ class GpuLiquidEffect:
         timestep = self.config.timestep(delta_seconds)
         self._simulation_fps = 1.0 / delta_seconds if delta_seconds > 0.0 else 0.0
         stable_interaction = self._source_stabilizer.update(interaction, delta_seconds)
-        self._active_sources = len(stable_interaction.active_hands())
+        self._active_sources = sum(
+            len(hand.fluid_sources()) for hand in stable_interaction.active_hands()
+        )
         if self._timing_enabled:
             self._simulation_timer.begin()
         try:

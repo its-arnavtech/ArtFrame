@@ -33,6 +33,13 @@ def _mix_point(first: Point2D, second: Point2D, alpha: float) -> Point2D:
     return Point2D(_mix(first.x, second.x, alpha), _mix(first.y, second.y, alpha))
 
 
+def _bounded_prediction(position: Point2D, velocity: Point2D, seconds: float) -> Point2D:
+    return Point2D(
+        max(0.0, min(1.0, position.x + velocity.x * seconds)),
+        max(0.0, min(1.0, position.y + velocity.y * seconds)),
+    )
+
+
 @dataclass
 class _StableSource:
     control: HandControl
@@ -86,17 +93,28 @@ class LiquidSourceStabilizer:
                 pinch_amount=previous.control.pinch_amount,
                 openness=previous.control.openness,
                 influence=fade,
+                fingertips=previous.control.fingertips,
+                fingertip_velocities=tuple(
+                    Point2D(velocity.x * fade, velocity.y * fade)
+                    for velocity in previous.control.fingertip_velocities
+                ),
             )
             previous.control = held
             return held
 
         limited_velocity = clamp_velocity(target.velocity, self._config.maximum_source_velocity)
+        limited_fingertip_velocities = tuple(
+            clamp_velocity(velocity, self._config.maximum_source_velocity)
+            for velocity in target.fingertip_velocities
+        )
         limited = HandControl(
             position=target.position,
             velocity=limited_velocity,
             pinch_amount=target.pinch_amount,
             openness=target.openness,
             influence=target.influence,
+            fingertips=target.fingertips,
+            fingertip_velocities=limited_fingertip_velocities,
         )
         if previous is None:
             self._sources[label] = _StableSource(limited, target)
@@ -112,9 +130,17 @@ class LiquidSourceStabilizer:
             previous.prediction_seconds = 0.0
 
         prediction = previous.prediction_seconds
-        predicted_position = Point2D(
-            max(0.0, min(1.0, limited.position.x + limited.velocity.x * prediction)),
-            max(0.0, min(1.0, limited.position.y + limited.velocity.y * prediction)),
+        predicted_position = _bounded_prediction(
+            limited.position,
+            limited.velocity,
+            prediction,
+        )
+        predicted_fingertips = tuple(
+            _bounded_prediction(position, velocity, prediction)
+            for position, velocity in zip(
+                limited.fingertips,
+                limited.fingertip_velocities,
+            )
         )
         predicted = HandControl(
             position=predicted_position,
@@ -122,15 +148,34 @@ class LiquidSourceStabilizer:
             pinch_amount=limited.pinch_amount,
             openness=limited.openness,
             influence=limited.influence,
+            fingertips=predicted_fingertips,
+            fingertip_velocities=limited.fingertip_velocities,
         )
 
         alpha = exponential_response(delta_seconds, self._config.source_smoothing_time)
+        if len(previous.control.fingertips) == len(predicted.fingertips):
+            smoothed_fingertips = tuple(
+                _mix_point(first, second, alpha)
+                for first, second in zip(previous.control.fingertips, predicted.fingertips)
+            )
+            smoothed_fingertip_velocities = tuple(
+                _mix_point(first, second, alpha)
+                for first, second in zip(
+                    previous.control.fingertip_velocities,
+                    predicted.fingertip_velocities,
+                )
+            )
+        else:
+            smoothed_fingertips = predicted.fingertips
+            smoothed_fingertip_velocities = predicted.fingertip_velocities
         smoothed = HandControl(
             position=_mix_point(previous.control.position, predicted.position, alpha),
             velocity=_mix_point(previous.control.velocity, predicted.velocity, alpha),
             pinch_amount=_mix(previous.control.pinch_amount, predicted.pinch_amount, alpha),
             openness=_mix(previous.control.openness, predicted.openness, alpha),
             influence=_mix(previous.control.influence, predicted.influence, alpha),
+            fingertips=smoothed_fingertips,
+            fingertip_velocities=smoothed_fingertip_velocities,
         )
         previous.control = smoothed
         previous.missing_seconds = 0.0

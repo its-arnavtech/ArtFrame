@@ -183,6 +183,8 @@ def test_liquid_source_uniforms_flip_vertical_axis_and_preserve_semantics():
         velocity=Point2D(0.1, -0.2),
         pinch_amount=0.6,
         openness=0.4,
+        fingertips=(Point2D(0.2, 0.7), Point2D(0.3, 0.8)),
+        fingertip_velocities=(Point2D(0.4, -0.5), Point2D(-0.1, 0.2)),
     )
 
     uniforms = interaction_source_uniforms(InteractionState(left=left), config)
@@ -191,7 +193,12 @@ def test_liquid_source_uniforms_flip_vertical_axis_and_preserve_semantics():
     assert uniforms["u_left_position"] == (0.25, 0.25)
     assert uniforms["u_left_velocity"] == (0.1, 0.2)
     assert uniforms["u_left_openness"] == 0.4
+    assert uniforms["u_left_tip_count"] == 2
+    assert uniforms["u_left_tip0_position"] == pytest.approx((0.2, 0.3))
+    assert uniforms["u_left_tip0_velocity"] == pytest.approx((0.4, 0.5))
+    assert uniforms["u_left_tip1_position"] == pytest.approx((0.3, 0.2))
     assert uniforms["u_right_active"] == 0
+    assert uniforms["u_right_tip_count"] == 0
 
 
 def test_pass_executor_runs_solver_in_graph_order_with_jacobi_iterations():

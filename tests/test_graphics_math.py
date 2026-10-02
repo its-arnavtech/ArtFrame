@@ -3,7 +3,8 @@ import pytest
 
 from app.graphics.liquid.advection import advect_nearest, backtrace_positions
 from app.graphics.liquid.distortion import distortion_at
-from app.graphics.liquid.sources import FlowSource
+from app.graphics.liquid.sources import FlowSource, sources_from_interaction
+from app.interaction.hand_controls import HandControl, InteractionState
 from app.graphics.renderer import composite_bgra
 from app.types import Point2D
 
@@ -41,6 +42,25 @@ def test_distortion_is_strongest_at_source_and_follows_velocity():
 
     assert displacement.x == pytest.approx(0.15)
     assert displacement.y == pytest.approx(-0.1)
+
+
+def test_every_fingertip_becomes_an_independent_fluid_source():
+    fingertips = tuple(Point2D(0.1 * index, 0.4) for index in range(1, 6))
+    velocities = tuple(Point2D(0.01 * index, -0.02 * index) for index in range(1, 6))
+    hand = HandControl(
+        position=Point2D(0.15, 0.4),
+        velocity=Point2D(0.1, -0.2),
+        pinch_amount=0.5,
+        openness=0.6,
+        fingertips=fingertips,
+        fingertip_velocities=velocities,
+    )
+
+    sources = sources_from_interaction(InteractionState(left=hand))
+
+    assert len(sources) == 5
+    assert tuple(source.position for source in sources) == fingertips
+    assert tuple(source.velocity for source in sources) == velocities
 
 
 def test_bgra_composite_uses_effect_alpha():

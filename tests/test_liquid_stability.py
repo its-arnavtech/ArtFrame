@@ -63,6 +63,33 @@ def test_source_stabilizer_predicts_between_repeated_tracking_results():
     assert predicted.left.position.x == pytest.approx(first.left.position.x + 0.02)
 
 
+def test_source_stabilizer_predicts_and_fades_each_fingertip():
+    config = LiquidSimulationConfig(
+        source_smoothing_time=0.0,
+        source_prediction_time=0.04,
+        source_dropout_hold=0.0,
+        source_fade_time=0.2,
+    )
+    stabilizer = LiquidSourceStabilizer(config)
+    control = HandControl(
+        Point2D(0.5, 0.5),
+        Point2D(0.0, 0.0),
+        0.5,
+        0.5,
+        fingertips=(Point2D(0.2, 0.3),),
+        fingertip_velocities=(Point2D(1.0, -0.5),),
+    )
+
+    first = stabilizer.update(InteractionState(left=control), 0.01)
+    predicted = stabilizer.update(InteractionState(left=control), 0.02)
+    fading = stabilizer.update(InteractionState(), 0.1)
+
+    assert first.left is not None and predicted.left is not None and fading.left is not None
+    assert predicted.left.fingertips[0] == Point2D(0.22, 0.29)
+    assert 0.0 < fading.left.influence < 1.0
+    assert fading.left.fingertip_velocities[0].x < 1.0
+
+
 @pytest.mark.parametrize("scenario", tuple(StressScenario))
 def test_all_deterministic_stress_scenarios_remain_finite_and_bounded(scenario):
     config = LiquidSimulationConfig(maximum_source_velocity=2.5)

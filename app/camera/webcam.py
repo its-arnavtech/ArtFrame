@@ -145,7 +145,10 @@ class Webcam:
         set_property = getattr(self._capture, "set", None)
         if set_property is None:
             return
-        if width is not None and height is not None:
+        # DirectShow does not honour an MJPG request on every UVC camera, and asking
+        # for it can leave the negotiated YUY2 mode running at a third of its normal
+        # rate. Media Foundation still benefits from the hint.
+        if width is not None and height is not None and self._backend != cv2.CAP_DSHOW:
             set_property(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         if width is not None:
             set_property(cv2.CAP_PROP_FRAME_WIDTH, float(width))

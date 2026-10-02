@@ -19,14 +19,15 @@ class FlowSource:
 def sources_from_interaction(interaction: InteractionState) -> tuple[FlowSource, ...]:
     sources: list[FlowSource] = []
     for hand in interaction.active_hands():
-        sources.append(
-            FlowSource(
-                position=hand.position,
-                velocity=hand.velocity,
-                radius=0.05 + hand.openness * 0.09,
-                strength=0.2 + hand.pinch_amount * 0.8,
-                pinch_amount=hand.pinch_amount,
-                openness=hand.openness,
+        for position, velocity in hand.fluid_sources():
+            sources.append(
+                FlowSource(
+                    position=position,
+                    velocity=velocity,
+                    radius=0.025 + hand.openness * 0.025,
+                    strength=(0.2 + hand.pinch_amount * 0.8) * hand.influence,
+                    pinch_amount=hand.pinch_amount,
+                    openness=hand.openness,
+                )
             )
-        )
     return tuple(sources)

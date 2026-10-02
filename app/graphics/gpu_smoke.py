@@ -28,18 +28,32 @@ def _interaction(frame_index: int) -> InteractionState:
     phase = frame_index * 0.035
     left_x = 0.35 + 0.12 * float(np.sin(phase))
     right_y = 0.55 + 0.10 * float(np.cos(phase * 0.8))
+    left_velocity = Point2D(0.12 * float(np.cos(phase)), 0.0)
+    right_velocity = Point2D(0.0, -0.08 * float(np.sin(phase * 0.8)))
+    left_tips = tuple(
+        Point2D(left_x + (index - 2) * 0.022, 0.42 + abs(index - 2) * 0.018)
+        for index in range(5)
+    )
+    right_tips = tuple(
+        Point2D(0.61 + index * 0.020, right_y + abs(index - 2) * 0.016)
+        for index in range(5)
+    )
     return InteractionState(
         left=HandControl(
             position=Point2D(left_x, 0.45),
-            velocity=Point2D(0.12 * float(np.cos(phase)), 0.0),
+            velocity=left_velocity,
             pinch_amount=0.2,
             openness=0.7,
+            fingertips=left_tips,
+            fingertip_velocities=(left_velocity,) * 5,
         ),
         right=HandControl(
             position=Point2D(0.65, right_y),
-            velocity=Point2D(0.0, -0.08 * float(np.sin(phase * 0.8))),
+            velocity=right_velocity,
             pinch_amount=0.5 + 0.5 * float(np.sin(phase * 0.6)),
             openness=0.5,
+            fingertips=right_tips,
+            fingertip_velocities=(right_velocity,) * 5,
         ),
     )
 

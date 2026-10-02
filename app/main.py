@@ -263,7 +263,9 @@ def _print_camera_catalog(devices: tuple[CameraDevice, ...]) -> None:
     if not devices:
         print("Cameras detected: none (waiting for hot-plug)")
         return
-    summary = ", ".join(f"[{device.index}] {device.name}" for device in devices)
+    summary = ", ".join(
+        f"[{device.index}] {device.name} ({device.backend_label})" for device in devices
+    )
     print(f"Cameras detected: {summary}")
 
 
